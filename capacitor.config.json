@@ -1,0 +1,6 @@
+{
+  "appId": "com.snoopy.mykey",
+  "appName": "My Key",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
