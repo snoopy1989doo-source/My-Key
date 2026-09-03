@@ -7,6 +7,7 @@ import VaultList from './components/VaultList';
 import VaultItemModal from './components/VaultItemModal';
 import PasswordGeneratorModal from './components/PasswordGeneratorModal';
 import SettingsModal from './components/SettingsModal';
+import CategoryManagerModal from './components/CategoryManagerModal';
 import { Plus } from 'lucide-react';
 
 function VaultApp() {
@@ -16,6 +17,7 @@ function VaultApp() {
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('cloud');
 
   // If vault is not yet created
@@ -57,6 +59,7 @@ function VaultApp() {
         <VaultList
           onSelectItem={handleSelectItem}
           onAddNew={handleAddNew}
+          onOpenCategoryManager={() => setIsCategoryManagerOpen(true)}
         />
       </main>
 
@@ -87,6 +90,11 @@ function VaultApp() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         initialTab={settingsTab}
+      />
+
+      <CategoryManagerModal
+        isOpen={isCategoryManagerOpen}
+        onClose={() => setIsCategoryManagerOpen(false)}
       />
     </div>
   );

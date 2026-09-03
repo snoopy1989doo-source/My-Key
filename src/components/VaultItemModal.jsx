@@ -46,7 +46,7 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
     } else {
       setFormData({
         title: '',
-        category: 'games',
+        category: settings.categories?.[0]?.id || 'games',
         username: '',
         password: '',
         pin: '',
