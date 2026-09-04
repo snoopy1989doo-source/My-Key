@@ -23,11 +23,33 @@ export function VaultProvider({ children }) {
   const [lastSynced, setLastSynced] = useState(null);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isStealthMode, setIsStealthMode] = useState(false);
 
   // Active encryption key kept only in memory while unlocked
   const activeVaultKeyRef = useRef(null);
   const autoLockTimerRef = useRef(null);
   const clipboardClearTimerRef = useRef(null);
+
+  const toggleStealthMode = () => setIsStealthMode(prev => !prev);
+
+  // Keyboard shortcut: Alt+S or Esc to toggle Stealth Mode
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.altKey && (e.key === 's' || e.key === 'S')) || e.key === 'Escape') {
+        if (!isLocked) {
+          setIsStealthMode(prev => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLocked]);
+
+  // Apply Theme to document root
+  useEffect(() => {
+    const currentTheme = settings.theme || 'emerald';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+  }, [settings.theme]);
 
   // Check if vault is already setup
   useEffect(() => {
@@ -481,6 +503,9 @@ export function VaultProvider({ children }) {
         lastSynced,
         activeCategory,
         searchQuery,
+        isStealthMode,
+        toggleStealthMode,
+        setTheme: (t) => updateSettings({ theme: t }),
         setActiveCategory,
         setSearchQuery,
         setupNewVault,

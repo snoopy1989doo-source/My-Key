@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
 import {
   X, Cloud, Lock, Shield, KeyRound, Download, Upload, Trash2,
-  CheckCircle2, AlertTriangle, RefreshCw, Eye, EyeOff, FileText, Database
+  CheckCircle2, AlertTriangle, RefreshCw, Eye, EyeOff, FileText, Database,
+  Palette, Printer, Check
 } from 'lucide-react';
 import { useVault } from '../context/VaultContext';
 import { storageService } from '../services/storage';
 
-export default function SettingsModal({ isOpen, onClose, initialTab = 'cloud' }) {
+const THEMES_LIST = [
+  { id: 'emerald', name: 'Cyber Emerald', desc: 'โทนเขียวมรกต แฮกเกอร์ & ไซเบอร์ (ค่าเริ่มต้น)', color: 'bg-emerald-500', border: 'border-emerald-500' },
+  { id: 'violet', name: 'Midnight Violet', desc: 'โทนม่วงเข้ม ลึกลับ หรูหรา ไนท์โหมด', color: 'bg-purple-500', border: 'border-purple-500' },
+  { id: 'blue', name: 'Cyberpunk Blue', desc: 'โทนน้ำเงิน-ฟ้า นีออน ดิจิทัลไฮเทค', color: 'bg-blue-500', border: 'border-blue-500' },
+  { id: 'gold', name: 'Obsidian Gold', desc: 'โทนดำตัดทอง พรีเมียม เลอค่า', color: 'bg-amber-500', border: 'border-amber-500' },
+  { id: 'rose', name: 'Crimson Rose', desc: 'โทนแดงกุหลาบ โฉบเฉี่ยว ทันสมัย', color: 'bg-rose-500', border: 'border-rose-500' }
+];
+
+export default function SettingsModal({ isOpen, onClose, initialTab = 'cloud', onOpenPrint }) {
   const {
     settings,
     updateSettings,
@@ -196,7 +205,20 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'cloud' })
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>สำรอง & กู้คืนข้อมูล</span>
+            <span>สำรอง & กู้คืน</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('theme')}
+            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-colors ${
+              activeTab === 'theme'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Palette className="w-4 h-4" />
+            <span>ธีมสี</span>
           </button>
         </div>
 
@@ -465,6 +487,28 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'cloud' })
                 </label>
               </div>
 
+              {/* Printable Physical Sheet Card */}
+              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-teal-400" />
+                  <span>พิมพ์สมุดรหัสผ่านลับ (Print Physical Sheet)</span>
+                </h4>
+                <p className="text-slate-400 text-[11px]">
+                  จัดหน้ารูปแบบตารางขนาดกระดาษ A4 สะอาดตา สั่งพิมพ์ใส่กระดาษหรือบันทึกเป็น PDF เก็บไว้ในตู้เซฟที่บ้าน
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenPrint?.();
+                  }}
+                  className="w-full py-2.5 bg-surface-800 hover:bg-slate-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors border border-slate-700"
+                >
+                  <Printer className="w-4 h-4 text-teal-400" />
+                  <span>เปิดหน้าต่างสั่งพิมพ์สมุดรหัสผ่าน</span>
+                </button>
+              </div>
+
               {/* Danger Zone: Factory Reset */}
               <div className="bg-red-950/20 border border-red-500/30 rounded-2xl p-4 space-y-2">
                 <h4 className="font-bold text-red-400 text-sm flex items-center gap-2">
@@ -500,6 +544,47 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'cloud' })
                     ล้างข้อมูลในเครื่อง
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: THEMES */}
+          {activeTab === 'theme' && (
+            <div className="space-y-4">
+              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-purple-400" />
+                  <span>เลือกธีมสีตู้เซฟ (Vault Accent Theme)</span>
+                </h4>
+                <p className="text-slate-400 text-[11px]">
+                  ปรับแต่งโทนสีหลักและแสงนีออนของแอปตามสไตล์ที่คุณชอบ
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  {THEMES_LIST.map((th) => {
+                    const isSelected = (settings.theme || 'emerald') === th.id;
+                    return (
+                      <button
+                        key={th.id}
+                        type="button"
+                        onClick={() => updateSettings({ theme: th.id })}
+                        className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
+                          isSelected
+                            ? 'bg-surface-950 border-white/50 shadow-lg shadow-black/50 scale-[1.02]'
+                            : 'bg-surface-900/70 border-slate-800 hover:border-slate-700 hover:bg-surface-900'
+                        }`}
+                      >
+                        <div className={`w-9 h-9 rounded-xl ${th.color} flex items-center justify-center text-surface-950 font-bold shrink-0 shadow-md`}>
+                          {isSelected ? <Check className="w-5 h-5 text-surface-950 stroke-[3]" /> : null}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-white text-xs">{th.name}</p>
+                          <p className="text-[10px] text-slate-400 truncate">{th.desc}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}

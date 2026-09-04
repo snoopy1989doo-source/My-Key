@@ -8,6 +8,7 @@ import VaultItemModal from './components/VaultItemModal';
 import PasswordGeneratorModal from './components/PasswordGeneratorModal';
 import SettingsModal from './components/SettingsModal';
 import CategoryManagerModal from './components/CategoryManagerModal';
+import PrintVaultModal from './components/PrintVaultModal';
 import { Plus } from 'lucide-react';
 
 function VaultApp() {
@@ -18,6 +19,7 @@ function VaultApp() {
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('cloud');
 
   // If vault is not yet created
@@ -52,6 +54,7 @@ function VaultApp() {
         onOpenGenerator={() => setIsGeneratorOpen(true)}
         onOpenSettings={handleOpenSettings}
         onAddNew={handleAddNew}
+        onOpenPrint={() => setIsPrintModalOpen(true)}
       />
 
       {/* Main Content: Vault Items & Categories */}
@@ -90,11 +93,17 @@ function VaultApp() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         initialTab={settingsTab}
+        onOpenPrint={() => setIsPrintModalOpen(true)}
       />
 
       <CategoryManagerModal
         isOpen={isCategoryManagerOpen}
         onClose={() => setIsCategoryManagerOpen(false)}
+      />
+
+      <PrintVaultModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
       />
     </div>
   );

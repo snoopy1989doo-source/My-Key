@@ -2,9 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root, [data-theme="emerald"] {
   font-family: 'Prompt', 'Inter', system-ui, -apple-system, sans-serif;
   color-scheme: dark;
+  --theme-accent: #10b981;
+  --theme-accent-hover: #059669;
+  --theme-glow: rgba(16, 185, 129, 0.15);
+  --theme-badge-bg: rgba(6, 78, 59, 0.6);
+  --theme-border: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="violet"] {
+  --theme-accent: #a855f7;
+  --theme-accent-hover: #9333ea;
+  --theme-glow: rgba(168, 85, 247, 0.15);
+  --theme-badge-bg: rgba(88, 28, 135, 0.6);
+  --theme-border: rgba(168, 85, 247, 0.3);
+}
+
+[data-theme="blue"] {
+  --theme-accent: #3b82f6;
+  --theme-accent-hover: #2563eb;
+  --theme-glow: rgba(59, 130, 246, 0.15);
+  --theme-badge-bg: rgba(30, 58, 138, 0.6);
+  --theme-border: rgba(59, 130, 246, 0.3);
+}
+
+[data-theme="gold"] {
+  --theme-accent: #f59e0b;
+  --theme-accent-hover: #d97706;
+  --theme-glow: rgba(245, 158, 11, 0.15);
+  --theme-badge-bg: rgba(120, 53, 15, 0.6);
+  --theme-border: rgba(245, 158, 11, 0.3);
+}
+
+[data-theme="rose"] {
+  --theme-accent: #f43f5e;
+  --theme-accent-hover: #e11d48;
+  --theme-glow: rgba(244, 63, 94, 0.15);
+  --theme-badge-bg: rgba(136, 19, 55, 0.6);
+  --theme-border: rgba(244, 63, 94, 0.3);
 }
 
 body {
@@ -47,4 +84,18 @@ body {
 }
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Print Styles for Printable Vault Sheet */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
 }

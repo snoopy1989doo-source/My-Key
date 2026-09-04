@@ -20,6 +20,7 @@ const DEFAULT_FIREBASE_CONFIG = {
 };
 
 const DEFAULT_SETTINGS = {
+  theme: 'emerald', // 'emerald' | 'violet' | 'blue' | 'gold' | 'rose'
   autoLockMinutes: 5,
   clearClipboardSeconds: 30,
   biometricsEnabled: false,

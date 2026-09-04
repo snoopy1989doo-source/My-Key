@@ -1,25 +1,73 @@
 import React from 'react';
-import { Shield, Lock, Cloud, CloudOff, RefreshCw, Sliders, Dna, Search, Plus, Check } from 'lucide-react';
+import {
+  Shield, Lock, Cloud, CloudOff, RefreshCw, Sliders, Dna, Search,
+  Plus, Eye, EyeOff, Printer, Palette
+} from 'lucide-react';
 import { useVault } from '../context/VaultContext';
 
-export default function Header({ onOpenGenerator, onOpenSettings, onAddNew }) {
-  const { lockVault, syncStatus, lastSynced, triggerCloudSync, settings, searchQuery, setSearchQuery } = useVault();
+// Theme styles mapper
+const THEME_STYLES = {
+  emerald: {
+    accent: 'text-emerald-400',
+    border: 'border-emerald-500/40',
+    bgBadge: 'bg-emerald-950/80 border-emerald-500/30 text-emerald-400',
+    gradient: 'from-emerald-500/20 to-teal-500/30'
+  },
+  violet: {
+    accent: 'text-purple-400',
+    border: 'border-purple-500/40',
+    bgBadge: 'bg-purple-950/80 border-purple-500/30 text-purple-400',
+    gradient: 'from-purple-500/20 to-fuchsia-500/30'
+  },
+  blue: {
+    accent: 'text-blue-400',
+    border: 'border-blue-500/40',
+    bgBadge: 'bg-blue-950/80 border-blue-500/30 text-blue-400',
+    gradient: 'from-blue-500/20 to-cyan-500/30'
+  },
+  gold: {
+    accent: 'text-amber-400',
+    border: 'border-amber-500/40',
+    bgBadge: 'bg-amber-950/80 border-amber-500/30 text-amber-400',
+    gradient: 'from-amber-500/20 to-yellow-500/30'
+  },
+  rose: {
+    accent: 'text-rose-400',
+    border: 'border-rose-500/40',
+    bgBadge: 'bg-rose-950/80 border-rose-500/30 text-rose-400',
+    gradient: 'from-rose-500/20 to-pink-500/30'
+  }
+};
+
+export default function Header({ onOpenGenerator, onOpenSettings, onAddNew, onOpenPrint }) {
+  const {
+    lockVault,
+    syncStatus,
+    lastSynced,
+    triggerCloudSync,
+    settings,
+    searchQuery,
+    setSearchQuery,
+    isStealthMode,
+    toggleStealthMode
+  } = useVault();
 
   const isFirebaseConfigured = !!settings.firebaseConfig;
+  const currentTheme = THEME_STYLES[settings.theme] || THEME_STYLES.emerald;
 
   return (
-    <header className="sticky top-0 z-30 bg-surface-950/80 backdrop-blur-xl border-b border-slate-800/80 safe-top">
+    <header className="sticky top-0 z-30 bg-surface-950/80 backdrop-blur-xl border-b border-slate-800/80 safe-top no-print">
       <div className="max-w-4xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           {/* Logo & App Name */}
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/30 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-md shadow-emerald-950/50">
+            <div className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${currentTheme.gradient} border ${currentTheme.border} flex items-center justify-center ${currentTheme.accent} shadow-md shadow-black/50`}>
               <Shield className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-white text-base tracking-tight">My Key</span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.2 bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 rounded-md">
+                <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.2 border rounded-md ${currentTheme.bgBadge}`}>
                   Zero-Knowledge
                 </span>
               </div>
@@ -50,7 +98,7 @@ export default function Header({ onOpenGenerator, onOpenSettings, onAddNew }) {
               ) : isFirebaseConfigured ? (
                 <>
                   <Cloud className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 hidden sm:inline">คลาวด์เชื่อมต่อแล้ว</span>
+                  <span className="text-emerald-400 hidden sm:inline">คลาวด์ซิงก์</span>
                 </>
               ) : (
                 <>
@@ -58,6 +106,30 @@ export default function Header({ onOpenGenerator, onOpenSettings, onAddNew }) {
                   <span className="text-slate-400 hidden sm:inline">เชื่อมต่อคลาวด์</span>
                 </>
               )}
+            </button>
+
+            {/* Privacy / Stealth Mode Button */}
+            <button
+              type="button"
+              onClick={toggleStealthMode}
+              title={isStealthMode ? 'ปิดโหมดพรางหน้าจอ (Alt + S)' : 'เปิดโหมดพรางหน้าจอเวลามีคนมอง (Alt + S)'}
+              className={`p-2 rounded-xl border transition-all ${
+                isStealthMode
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-md shadow-amber-950/40 animate-pulse'
+                  : 'bg-surface-900 border-slate-800 hover:border-slate-700 text-slate-300 hover:text-amber-400'
+              }`}
+            >
+              {isStealthMode ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4" />}
+            </button>
+
+            {/* Printable Physical Sheet Button */}
+            <button
+              type="button"
+              onClick={onOpenPrint}
+              title="พิมพ์สมุดรหัสผ่านลับ (Printable Sheet)"
+              className="p-2 rounded-xl bg-surface-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-teal-400 transition-colors"
+            >
+              <Printer className="w-4 h-4" />
             </button>
 
             {/* Password Generator Tool Button */}
@@ -74,7 +146,7 @@ export default function Header({ onOpenGenerator, onOpenSettings, onAddNew }) {
             <button
               type="button"
               onClick={() => onOpenSettings()}
-              title="การตั้งค่า"
+              title="การตั้งค่าและเปลี่ยนธีม"
               className="p-2 rounded-xl bg-surface-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
             >
               <Sliders className="w-4 h-4" />

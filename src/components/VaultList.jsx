@@ -18,7 +18,17 @@ const ICON_MAP = {
 };
 
 export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManager }) {
-  const { vaultItems, activeCategory, setActiveCategory, searchQuery, toggleFavorite, copyToClipboard, settings } = useVault();
+  const {
+    vaultItems,
+    activeCategory,
+    setActiveCategory,
+    searchQuery,
+    toggleFavorite,
+    copyToClipboard,
+    settings,
+    isStealthMode,
+    toggleStealthMode
+  } = useVault();
 
   const [copiedField, setCopiedField] = useState(null); // `${itemId}-${field}`
   const [revealedPasswords, setRevealedPasswords] = useState({}); // { [itemId]: boolean }
@@ -232,6 +242,26 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
         )}
       </div>
 
+      {/* Stealth Mode Indicator Banner */}
+      {isStealthMode && (
+        <div className="mb-4 p-3 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between text-xs text-amber-300 shadow-lg shadow-amber-950/20 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🕶️</span>
+            <div>
+              <p className="font-bold text-amber-400">โหมดพรางหน้าจอเปิดอยู่</p>
+              <p className="text-[11px] text-slate-300">ข้อมูลรหัสผ่านทั้งหมดถูกเบลอไว้ (สามารถเลื่อนเมาส์ชี้เพื่อแอบดูเฉพาะการ์ดนั้นได้)</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggleStealthMode}
+            className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-xl text-amber-300 text-xs font-bold transition-colors shrink-0"
+          >
+            ปิดโหมดพราง
+          </button>
+        </div>
+      )}
+
       {/* Items List */}
       {sortedItems.length === 0 ? (
         <div className="text-center py-16 px-4 bg-surface-900/40 border border-dashed border-slate-800 rounded-3xl mt-4">
@@ -268,7 +298,9 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
               <div
                 key={item.id}
                 onClick={() => onSelectItem(item)}
-                className="group bg-surface-850/80 hover:bg-surface-850 border border-slate-800 hover:border-slate-700/90 rounded-2xl p-4 transition-all duration-200 hover:shadow-xl hover:shadow-black/40 cursor-pointer relative"
+                className={`group bg-surface-850/80 hover:bg-surface-850 border border-slate-800 hover:border-slate-700/90 rounded-2xl p-4 transition-all duration-200 hover:shadow-xl hover:shadow-black/40 cursor-pointer relative ${
+                  isStealthMode ? 'backdrop-blur-sm' : ''
+                }`}
               >
                 {/* Top Row: Icon, Title, Favorite */}
                 <div className="flex items-start justify-between gap-2 mb-3">
@@ -277,7 +309,9 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
                       <CatIcon className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors line-clamp-1">
+                      <h4 className={`text-sm font-bold text-white group-hover:text-emerald-300 transition-all line-clamp-1 ${
+                        isStealthMode ? 'filter blur-[5px] group-hover:filter-none' : ''
+                      }`}>
                         {item.title}
                       </h4>
                       <span className="text-[10px] text-slate-400 capitalize">
@@ -317,7 +351,9 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
                 </div>
 
                 {/* Details Section */}
-                <div className="space-y-2 text-xs">
+                <div className={`space-y-2 text-xs transition-all duration-300 ${
+                  isStealthMode ? 'filter blur-[6px] group-hover:filter-none select-none' : ''
+                }`}>
                   {/* Username / Email */}
                   {item.username && (
                     <div className="flex items-center justify-between bg-surface-900/90 rounded-xl px-2.5 py-1.5 border border-slate-800/80">
