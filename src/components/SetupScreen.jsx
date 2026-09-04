@@ -117,8 +117,8 @@ MY KEY - EMERGENCY RECOVERY SHEET (เอกสารกู้คืนฉุก
 
         {/* Header Icon & Title */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400/20 to-emerald-600/30 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-3 shadow-lg shadow-emerald-950">
-            <Shield className="w-8 h-8" />
+          <div className="w-20 h-20 rounded-2xl border border-emerald-500/30 overflow-hidden mb-3 shadow-xl shadow-emerald-950 bg-surface-900">
+            <img src="./logo.png" alt="My Key Logo" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">ยินดีต้อนรับสู่ My Key</h1>
           <p className="text-sm text-slate-400 mt-1">

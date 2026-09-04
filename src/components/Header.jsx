@@ -61,8 +61,8 @@ export default function Header({ onOpenGenerator, onOpenSettings, onAddNew, onOp
         <div className="flex items-center justify-between gap-3">
           {/* Logo & App Name */}
           <div className="flex items-center gap-2.5">
-            <div className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${currentTheme.gradient} border ${currentTheme.border} flex items-center justify-center ${currentTheme.accent} shadow-md shadow-black/50`}>
-              <Shield className="w-5 h-5" />
+            <div className={`w-9 h-9 rounded-xl border ${currentTheme.border} overflow-hidden shadow-md shadow-black/50 shrink-0 bg-surface-900`}>
+              <img src="./logo.png" alt="My Key Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
