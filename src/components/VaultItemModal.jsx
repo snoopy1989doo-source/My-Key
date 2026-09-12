@@ -4,6 +4,7 @@ import {
   Lock, User, Globe, FileText, Hash, AlertCircle, Save
 } from 'lucide-react';
 import { useVault } from '../context/VaultContext';
+import { isAndroid, NativeVault } from '../services/native';
 import { generatePassword } from '../services/crypto';
 
 export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator }) {
@@ -27,6 +28,7 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
   const [copiedField, setCopiedField] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [apps, setApps] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -40,6 +42,7 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
         pin: item.pin || '',
         url: item.url || '',
         notes: item.notes || '',
+        androidPackage: item.androidPackage || '', androidCertSha256: item.androidCertSha256 || '',
         favorite: !!item.favorite,
         createdAt: item.createdAt
       });
@@ -55,14 +58,15 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
         favorite: false
       });
     }
+    setShowPassword(false); setShowPin(false);
     setConfirmDelete(false);
     setError('');
   }, [item, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleCopy = (field, text) => {
-    copyToClipboard(text, field === 'password' || field === 'pin');
+  const handleCopy = async (field, text) => {
+    if (!await copyToClipboard(text, field === 'password' || field === 'pin')) return;
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
@@ -106,7 +110,7 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto">
-      <div className="w-full max-w-lg bg-surface-900 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative my-8">
+      <div className="w-full max-w-lg bg-surface-900 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative my-auto max-h-[90dvh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
           <div className="flex items-center gap-2">
@@ -309,6 +313,7 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
             />
           </div>
 
+<section className="space-y-2"><h4 className="text-sm font-bold">Autofill สำหรับแอป Android</h4><p className="text-xs text-slate-400">ผูกบัญชีนี้กับแอปที่ติดตั้ง ตรวจชื่อแอปก่อนเลือก ระบบตรวจลายเซ็นแอปทุกครั้งก่อนกรอก</p>{formData.androidPackage && <p className="text-xs break-all">{formData.androidPackage}</p>}{isAndroid && <><button type="button" className="text-sm text-emerald-400 underline" onClick={async()=>{try{const result=await NativeVault.listApps();setApps(result.apps);}catch(e){setError(e.message);}}}>เลือกแอปที่ติดตั้ง</button>{apps.length>0&&<select aria-label="แอปสำหรับ Autofill" className="bg-surface-950 p-3 rounded-xl w-full" value={formData.androidPackage||''} onChange={e=>{const app=apps.find(a=>a.packageName===e.target.value);setFormData({...formData,androidPackage:app?.packageName||'',androidCertSha256:app?.certificate||''});}}><option value="">ไม่ผูกกับแอป</option>{apps.map(app=><option key={app.packageName} value={app.packageName}>{app.label} ({app.packageName})</option>)}</select>}</>}{formData.androidPackage&&<button type="button" className="text-xs underline" onClick={()=>setFormData({...formData,androidPackage:'',androidCertSha256:''})}>ยกเลิกการผูกแอป</button>}</section>
           {/* Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
@@ -329,14 +334,14 @@ export default function VaultItemModal({ item, isOpen, onClose, onOpenGenerator 
             {!isNew ? (
               confirmDelete ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-red-400 font-semibold">ยืนยันลบ?</span>
+                  <span className="text-xs text-red-400 font-semibold">ย้ายเข้าถังขยะ?</span>
                   <button
                     type="button"
                     onClick={handleDelete}
                     disabled={loading}
                     className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-colors"
                   >
-                    ลบเลย
+                    ย้ายเข้าถังขยะ
                   </button>
                   <button
                     type="button"

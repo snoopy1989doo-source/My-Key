@@ -1,135 +1,63 @@
-/**
- * Firebase Cloud Sync Service for My Key
- * Only encrypted blobs (Ciphertext) and salt/meta are synced.
- * Plaintext passwords NEVER reach Firebase.
- */
-
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-
-let app = null;
-let auth = null;
-let db = null;
-let currentUser = null;
-
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, linkWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { getFirestore, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { portableEnvelope, validateEnvelope } from './vaultModel.js';
+let app, auth, db;
+let pending = Promise.resolve();
+const revisionKey = uid => `mykey_cloud_revision_${uid}`;
 export const firebaseService = {
-  /**
-   * Initialize or reconfigure Firebase with config object
-   */
   init(config) {
-    if (!config || !config.apiKey || !config.projectId) {
-      return false;
-    }
-
-    try {
-      if (getApps().length > 0) {
-        app = getApp();
-      } else {
-        app = initializeApp(config);
-      }
-
-      auth = getAuth(app);
-      db = getFirestore(app);
-
-      // Listen for auth state
-      onAuthStateChanged(auth, (user) => {
-        currentUser = user;
-      });
-
-      // Auto sign-in anonymously if not signed in
-      if (!auth.currentUser) {
-        signInAnonymously(auth).catch((err) => {
-          console.warn('Firebase anonymous sign-in error:', err);
-        });
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Firebase init failed:', error);
-      return false;
-    }
-  },
-
-  isConfigured() {
-    return !!(app && db && auth);
-  },
-
-  async ensureAuth() {
-    if (!auth) throw new Error('Firebase ยังไม่ได้ถูกตั้งค่า');
-    if (currentUser) return currentUser;
-
-    return new Promise((resolve, reject) => {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        unsubscribe();
-        if (user) {
-          currentUser = user;
-          resolve(user);
-        } else {
-          signInAnonymously(auth)
-            .then((res) => {
-              currentUser = res.user;
-              resolve(res.user);
-            })
-            .catch(reject);
-        }
-      });
+    pending = pending.catch(() => {}).then(async () => {
+      if (app) await deleteApp(app);
+      app = auth = db = null;
+      if (!config) return;
+      if (!config.apiKey || !config.projectId) throw new Error('Firebase config ไม่ครบ');
+      app = initializeApp(config, 'my-key-v2'); auth = getAuth(app); db = getFirestore(app);
+      await auth.authStateReady();
     });
+    return pending;
   },
-
-  /**
-   * Sync encrypted vault to Firestore
-   */
-  async uploadVault(meta, encryptedData) {
-    if (!this.isConfigured()) {
-      return { success: false, message: 'Firebase ยังไม่ได้เชื่อมต่อ' };
-    }
-
-    try {
-      const user = await this.ensureAuth();
-      const vaultDocRef = doc(db, 'mykey_vaults', user.uid);
-
-      await setDoc(vaultDocRef, {
-        meta,
-        vault: encryptedData,
-        updatedAt: serverTimestamp(),
-        deviceInfo: navigator.userAgent
-      }, { merge: true });
-
-      return { success: true, timestamp: new Date().toISOString() };
-    } catch (error) {
-      console.error('Upload to Firebase failed:', error);
-      return { success: false, message: error.message };
-    }
+  async account() { await pending; return auth?.currentUser && { email: auth.currentUser.email, anonymous: auth.currentUser.isAnonymous }; },
+  async login(email, password, create = false) {
+    await pending;
+    if (!auth) throw new Error('กรุณาตั้งค่า Firebase ก่อน');
+    if (create && auth.currentUser?.isAnonymous) await linkWithCredential(auth.currentUser, EmailAuthProvider.credential(email, password));
+    else if (create) await createUserWithEmailAndPassword(auth, email, password);
+    else await signInWithEmailAndPassword(auth, email, password);
+    return this.account();
   },
-
-  /**
-   * Download encrypted vault from Firestore
-   */
-  async downloadVault() {
-    if (!this.isConfigured()) {
-      return { success: false, message: 'Firebase ยังไม่ได้เชื่อมต่อ' };
-    }
-
-    try {
-      const user = await this.ensureAuth();
-      const vaultDocRef = doc(db, 'mykey_vaults', user.uid);
-      const snapshot = await getDoc(vaultDocRef);
-
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        return {
-          success: true,
-          meta: data.meta,
-          vault: data.vault,
-          updatedAt: data.updatedAt?.toDate?.() || new Date()
-        };
-      } else {
-        return { success: false, message: 'ไม่พบข้อมูล Vault บนคลาวด์' };
+  async logout() { await pending; if (auth) await signOut(auth); },
+  async user() {
+    await pending;
+    if (!auth?.currentUser || auth.currentUser.isAnonymous) throw new Error('เข้าสู่ระบบบัญชี Cloud ก่อน จึงจะย้ายเครื่องได้');
+    return auth.currentUser;
+  },
+  async uploadVault(envelope) {
+    const user = await this.user();
+    const data = portableEnvelope(validateEnvelope(envelope));
+    const expected = JSON.parse(localStorage.getItem(revisionKey(user.uid)) || 'null');
+    const nextRevision = crypto.randomUUID();
+    await runTransaction(db, async tx => {
+      const ref = doc(db, 'mykey_vaults', user.uid), snap = await tx.get(ref);
+      if (snap.exists()) {
+        const remote = snap.data();
+        if (!expected || expected !== remote.cloudRevision || remote.meta?.vaultId !== data.meta.vaultId) throw new Error('Cloud มีข้อมูลอื่นหรือใหม่กว่า กรุณาดาวน์โหลดตรวจสอบและกู้คืน/รวมก่อนซิงก์');
       }
-    } catch (error) {
-      console.error('Download from Firebase failed:', error);
-      return { success: false, message: error.message };
-    }
+      tx.set(ref, { ...data, cloudRevision: nextRevision, updatedAt: serverTimestamp() });
+    });
+    localStorage.setItem(revisionKey(user.uid), JSON.stringify(nextRevision));
+    return { success: true, timestamp: new Date().toISOString() };
+  },
+  async downloadVault() {
+    const user = await this.user(), snap = await getDoc(doc(db, 'mykey_vaults', user.uid));
+    if (!snap.exists()) throw new Error('ไม่พบข้อมูลบน Cloud');
+    const data = snap.data();
+    const envelope = validateEnvelope({ app: data.app || 'My Key', version: data.version || '1.0', meta: data.meta, vault: data.vault });
+    return { envelope, cloudRevision: data.cloudRevision, uid: user.uid };
+  },
+  async acceptDownload(download) {
+    const user = await this.user();
+    if (user.uid !== download.uid) throw new Error('บัญชี Cloud เปลี่ยน กรุณาดาวน์โหลดใหม่');
+    if (download.cloudRevision) localStorage.setItem(revisionKey(user.uid), JSON.stringify(download.cloudRevision));
   }
 };

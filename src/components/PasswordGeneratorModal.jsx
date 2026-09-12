@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, Copy, Check, ShieldCheck, Dna } from 'lucide-react';
+import { useVault } from '../context/VaultContext';
 import { generatePassword } from '../services/crypto';
 
 export default function PasswordGeneratorModal({ isOpen, onClose, onSelectPassword }) {
+  const { copyToClipboard } = useVault();
   const [length, setLength] = useState(18);
   const [useUpper, setUseUpper] = useState(true);
   const [useLower, setUseLower] = useState(true);
@@ -12,6 +14,7 @@ export default function PasswordGeneratorModal({ isOpen, onClose, onSelectPasswo
   const [copied, setCopied] = useState(false);
 
   const generate = () => {
+    if (!useUpper && !useLower && !useNumbers && !useSymbols) { setPassword(''); return; }
     const pass = generatePassword({
       length,
       useUpper,
@@ -30,8 +33,8 @@ export default function PasswordGeneratorModal({ isOpen, onClose, onSelectPasswo
 
   if (!isOpen) return null;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(password);
+  const handleCopy = async () => {
+    if (!password || !await copyToClipboard(password)) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

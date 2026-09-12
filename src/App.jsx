@@ -9,10 +9,12 @@ import PasswordGeneratorModal from './components/PasswordGeneratorModal';
 import SettingsModal from './components/SettingsModal';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import PrintVaultModal from './components/PrintVaultModal';
+import VaultTools from './components/VaultTools';
 import { Plus } from 'lucide-react';
 
-function VaultApp() {
-  const { isSetup, isLocked } = useVault();
+function UnlockedApp() {
+  const { error, setError } = useVault();
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -21,16 +23,6 @@ function VaultApp() {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('cloud');
-
-  // If vault is not yet created
-  if (!isSetup) {
-    return <SetupScreen />;
-  }
-
-  // If vault is locked
-  if (isLocked) {
-    return <UnlockScreen />;
-  }
 
   const handleAddNew = () => {
     setSelectedItem(null);
@@ -51,12 +43,15 @@ function VaultApp() {
     <div className="min-h-screen bg-surface-950 text-slate-100 flex flex-col font-sans">
       {/* Header Bar */}
       <Header
+        onOpenTools={() => setToolsOpen(true)}
         onOpenGenerator={() => setIsGeneratorOpen(true)}
         onOpenSettings={handleOpenSettings}
         onAddNew={handleAddNew}
         onOpenPrint={() => setIsPrintModalOpen(true)}
       />
 
+      {error && <div role="alert" className="p-3 text-amber-300">{error} <button onClick={() => setError('')}>ปิด</button></div>}
+      {toolsOpen && <VaultTools onClose={() => setToolsOpen(false)} onSelectItem={handleSelectItem} />}
       {/* Main Content: Vault Items & Categories */}
       <main className="flex-1">
         <VaultList
@@ -89,12 +84,12 @@ function VaultApp() {
         onClose={() => setIsGeneratorOpen(false)}
       />
 
-      <SettingsModal
+      {isSettingsOpen && <SettingsModal key={settingsTab}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         initialTab={settingsTab}
         onOpenPrint={() => setIsPrintModalOpen(true)}
-      />
+      />}
 
       <CategoryManagerModal
         isOpen={isCategoryManagerOpen}
@@ -107,6 +102,13 @@ function VaultApp() {
       />
     </div>
   );
+}
+
+function VaultApp() {
+  const { isSetup, isLocked } = useVault();
+  if (!isSetup) return <SetupScreen />;
+  if (isLocked) return <UnlockScreen />;
+  return <UnlockedApp />;
 }
 
 export default function App() {

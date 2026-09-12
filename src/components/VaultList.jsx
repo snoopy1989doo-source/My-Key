@@ -27,7 +27,7 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
     copyToClipboard,
     settings,
     isStealthMode,
-    toggleStealthMode
+    toggleStealthMode, setError
   } = useVault();
 
   const [copiedField, setCopiedField] = useState(null); // `${itemId}-${field}`
@@ -93,8 +93,8 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
     isDraggingRef.current = false;
   };
 
-  const handleCopy = (itemId, field, text) => {
-    copyToClipboard(text, field === 'password' || field === 'pin');
+  const handleCopy = async (itemId, field, text) => {
+    if (!await copyToClipboard(text, field === 'password' || field === 'pin')) return;
     const key = `${itemId}-${field}`;
     setCopiedField(key);
     setTimeout(() => {
@@ -337,7 +337,7 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleFavorite(item.id);
+                        toggleFavorite(item.id).catch(e => setError(e.message));
                       }}
                       className="p-1.5 rounded-lg hover:bg-surface-800 transition-colors"
                     >

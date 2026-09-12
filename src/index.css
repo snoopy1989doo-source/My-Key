@@ -99,3 +99,11 @@ body {
     display: block !important;
   }
 }
+
+@media print {
+ body:has(.print-vault) #root > * > :not(.print-vault) { display:none !important; }
+ .print-vault, .print-vault > div, .print-vault > div > div { position:static !important; overflow:visible !important; max-height:none !important; height:auto !important; width:100% !important; max-width:none !important; margin:0 !important; background:white !important; color:black !important; box-shadow:none !important; padding:0 !important; border:0 !important; }
+ .print-vault td { white-space:normal !important; overflow:visible !important; overflow-wrap:anywhere; }
+ .print-vault tr { break-inside:avoid; }
+ @page { size:A4 landscape; margin:12mm; }
+}

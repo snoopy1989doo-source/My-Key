@@ -1,539 +1,158 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import {
-  deriveKey,
-  encryptData,
-  decryptData,
-  generateSalt,
-  generateEmergencyKey,
-  getRandomBytes,
-  bufferToBase64,
-  base64ToBuffer
-} from '../services/crypto';
-import { storageService } from '../services/storage';
-import { firebaseService } from '../services/firebase';
-
+import { storageService } from '../services/storage.js';
+import { VaultStore } from '../services/vaultStore.js';
+import { portableEnvelope, parseBackup, openEnvelope, exportRawKey, importRawKey } from '../services/vaultModel.js';
+import { generateEmergencyKey } from '../services/crypto.js';
+import { firebaseService } from '../services/firebase.js';
+import { isAndroid, NativeVault, nativeStatus, mirrorEnvelope, downloadFile } from '../services/native.js';
 const VaultContext = createContext(null);
-
 export function VaultProvider({ children }) {
-  const [isSetup, setIsSetup] = useState(false);
+  const [store] = useState(() => new VaultStore(storageService));
+  const [initial] = useState(() => { try { return { envelope: storageService.getEnvelope(), settings: storageService.getSettings() }; } catch (error) { return { error: error.message, settings: { categories: [], autoLockMinutes: 5 } }; } });
+  const [isSetup, setIsSetup] = useState(!!initial.envelope);
   const [isLocked, setIsLocked] = useState(true);
-  const [vaultItems, setVaultItems] = useState([]);
-  const [settings, setSettings] = useState(() => storageService.getSettings());
-  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'error'
+  const [payload, setPayload] = useState(null);
+  const [settings, setSettings] = useState(initial.settings);
+  const [error, setError] = useState(initial.error || '');
+  const [syncStatus, setSyncStatus] = useState('idle');
   const [lastSynced, setLastSynced] = useState(null);
+  const [backupStatus, setBackupStatus] = useState(() => { try { return storageService.getBackupStatus(); } catch { return {}; } });
+  const [biometrics, setBiometrics] = useState({ available: false, enrolled: false });
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isStealthMode, setIsStealthMode] = useState(false);
-
-  // Active encryption key kept only in memory while unlocked
-  const activeVaultKeyRef = useRef(null);
-  const autoLockTimerRef = useRef(null);
-  const clipboardClearTimerRef = useRef(null);
-
-  const toggleStealthMode = () => setIsStealthMode(prev => !prev);
-
-  // Keyboard shortcut: Alt+S or Esc to toggle Stealth Mode
+  const pendingImport = useRef(null), clipboardTimer = useRef(null), lastActivity = useRef(Date.now()), syncQueue = useRef(Promise.resolve());
+  const mounted = useRef(true);
+  const refreshNative = useCallback(async () => { try { const state = await nativeStatus(); if (mounted.current) setBiometrics(state); } catch { setBiometrics({ available: false, enrolled: false }); } }, []);
+  const lockVault = useCallback(() => {
+    store.lock(); pendingImport.current = null; setPayload(null); setIsLocked(true); setSearchQuery(''); setActiveCategory('all'); setIsStealthMode(false);
+  }, [store]);
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.altKey && (e.key === 's' || e.key === 'S')) || e.key === 'Escape') {
-        if (!isLocked) {
-          setIsStealthMode(prev => !prev);
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLocked]);
-
-  // Apply Theme to document root
-  useEffect(() => {
-    const currentTheme = settings.theme || 'emerald';
-    document.documentElement.setAttribute('data-theme', currentTheme);
-  }, [settings.theme]);
-
-  // Check if vault is already setup
-  useEffect(() => {
-    const meta = storageService.getVaultMeta();
-    if (meta && meta.isInitialized) {
-      setIsSetup(true);
-    } else {
-      setIsSetup(false);
-    }
-
-    // Initialize Firebase if config exists in settings
-    if (settings.firebaseConfig) {
-      const ok = firebaseService.init(settings.firebaseConfig);
-      if (ok) {
-        setSyncStatus('idle');
-      }
-    }
-  }, []);
-
-  // Auto-lock timer on user inactivity
-  const resetAutoLockTimer = useCallback(() => {
-    if (autoLockTimerRef.current) clearTimeout(autoLockTimerRef.current);
-    if (!isLocked && settings.autoLockMinutes > 0) {
-      autoLockTimerRef.current = setTimeout(() => {
-        lockVault();
-      }, settings.autoLockMinutes * 60 * 1000);
-    }
-  }, [isLocked, settings.autoLockMinutes]);
-
+    mounted.current = true;
+    const hide = () => { if (document.visibilityState === 'hidden') lockVault(); };
+    const external = event => { if (event.key === 'mykey_envelope_v2') lockVault(); };
+    document.addEventListener('visibilitychange', hide); window.addEventListener('pagehide', lockVault); window.addEventListener('storage', external);
+    let stopped = false, listener;
+    if (isAndroid) NativeVault.addListener('background', lockVault).then(handle => { if (stopped) handle.remove(); else listener = handle; });
+    refreshNative();
+    return () => { mounted.current = false; stopped = true; listener?.remove(); document.removeEventListener('visibilitychange', hide); window.removeEventListener('pagehide', lockVault); window.removeEventListener('storage', external); store.lock(); };
+  }, [store, lockVault, refreshNative]);
+  useEffect(() => { firebaseService.init(settings.firebaseConfig).catch(e => setError(e.message)); }, [settings.firebaseConfig]);
+  useEffect(() => { document.documentElement.dataset.theme = settings.theme || 'emerald'; }, [settings.theme]);
   useEffect(() => {
     if (isLocked) return;
-
-    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
-    const handleActivity = () => resetAutoLockTimer();
-
-    events.forEach(ev => window.addEventListener(ev, handleActivity, { passive: true }));
-    resetAutoLockTimer();
-
-    return () => {
-      events.forEach(ev => window.removeEventListener(ev, handleActivity));
-      if (autoLockTimerRef.current) clearTimeout(autoLockTimerRef.current);
-    };
-  }, [isLocked, resetAutoLockTimer]);
-
-  /**
-   * Helper: Export Raw Key to JSON-serializable string
-   */
-  const exportRawKey = async (cryptoKey) => {
-    const exported = await window.crypto.subtle.exportKey('raw', cryptoKey);
-    return bufferToBase64(exported);
+    lastActivity.current = Date.now();
+    const active = () => { lastActivity.current = Date.now(); };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll']; events.forEach(e => window.addEventListener(e, active, { passive: true }));
+    const timer = setInterval(() => { if (Date.now() - lastActivity.current >= Math.max(1, settings.autoLockMinutes || 5) * 60000) lockVault(); }, 1000);
+    return () => { clearInterval(timer); events.forEach(e => window.removeEventListener(e, active)); };
+  }, [isLocked, settings.autoLockMinutes, lockVault]);
+  const show = () => { setPayload(structuredClone(store.payload)); setIsLocked(false); setIsSetup(true); setError(''); };
+  const updateSettings = async next => {
+    if (next.categories) { await store.mutate('categories', next.categories); setPayload(structuredClone(store.payload)); }
+    const merged = { ...settings, ...next }; storageService.setSettings(merged); setSettings(merged);
+    if (next.categories) await afterSave();
   };
-
-  /**
-   * Helper: Import Raw Key string back to CryptoKey
-   */
-  const importRawKey = async (rawKeyBase64) => {
-    const buffer = base64ToBuffer(rawKeyBase64);
-    return await window.crypto.subtle.importKey(
-      'raw',
-      buffer,
-      { name: 'AES-GCM', length: 256 },
-      true,
-      ['encrypt', 'decrypt']
-    );
+  const triggerCloudSync = async () => {
+    const envelope = storageService.getEnvelope();
+    if (!envelope) throw new Error('ไม่มีข้อมูลให้ซิงก์');
+    const job = syncQueue.current.catch(() => {}).then(async () => {
+      setSyncStatus('syncing');
+      try { const result = await firebaseService.uploadVault(envelope); setLastSynced(result.timestamp); setSyncStatus('synced'); return result; }
+      catch (e) { setSyncStatus('error'); setError(e.message); throw e; }
+    });
+    syncQueue.current = job; return job;
   };
-
-  /**
-   * Step 1: Initialize a new Vault
-   */
-  const setupNewVault = async (masterPassword, pin) => {
-    try {
-      // 1. Generate master symmetric Vault Key
-      const vaultKey = await window.crypto.subtle.generateKey(
-        { name: 'AES-GCM', length: 256 },
-        true,
-        ['encrypt', 'decrypt']
-      );
-      const rawVaultKeyBase64 = await exportRawKey(vaultKey);
-
-      // 2. Derive key from Master Password and wrap VaultKey
-      const masterSalt = generateSalt(16);
-      const masterDerivedKey = await deriveKey(masterPassword, masterSalt);
-      const wrappedByMaster = await encryptData(rawVaultKeyBase64, masterDerivedKey);
-
-      // 3. Derive key from PIN and wrap VaultKey
-      const pinSalt = generateSalt(16);
-      const pinDerivedKey = await deriveKey(pin, pinSalt);
-      const wrappedByPin = await encryptData(rawVaultKeyBase64, pinDerivedKey);
-
-      // 4. Generate Emergency Recovery Key and wrap VaultKey
-      const emergencyKey = generateEmergencyKey();
-      const recoverySalt = generateSalt(16);
-      const recoveryDerivedKey = await deriveKey(emergencyKey, recoverySalt);
-      const wrappedByRecovery = await encryptData(rawVaultKeyBase64, recoveryDerivedKey);
-
-      // 5. Initial Vault Items (empty array)
-      const initialItems = [];
-      const encryptedVaultData = await encryptData(initialItems, vaultKey);
-
-      // 6. Save metadata and initial encrypted payload
-      const meta = {
-        isInitialized: true,
-        masterSalt,
-        pinSalt,
-        recoverySalt,
-        wrappedByMaster,
-        wrappedByPin,
-        wrappedByRecovery,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      storageService.setVaultMeta(meta);
-      storageService.setEncryptedVaultData(encryptedVaultData);
-
-      // 7. Store active key in memory & unlock
-      activeVaultKeyRef.current = vaultKey;
-      setVaultItems(initialItems);
-      setIsSetup(true);
-      setIsLocked(false);
-
-      // Return recovery key for user to save
-      return { success: true, emergencyKey };
-    } catch (error) {
-      console.error('Setup vault failed:', error);
-      throw error;
-    }
-  };
-
-  /**
-   * Unlock with PIN
-   */
-  const unlockWithPin = async (pin) => {
-    const meta = storageService.getVaultMeta();
-    if (!meta || !meta.wrappedByPin) throw new Error('ไม่พบข้อมูล Vault');
-
-    const pinDerivedKey = await deriveKey(pin, meta.pinSalt);
-    const rawVaultKeyBase64 = await decryptData(
-      meta.wrappedByPin.ciphertext,
-      meta.wrappedByPin.iv,
-      pinDerivedKey
-    );
-
-    const vaultKey = await importRawKey(rawVaultKeyBase64);
-    activeVaultKeyRef.current = vaultKey;
-
-    // Decrypt items
-    const encryptedData = storageService.getEncryptedVaultData();
-    if (encryptedData) {
-      const items = await decryptData(encryptedData.ciphertext, encryptedData.iv, vaultKey);
-      setVaultItems(Array.isArray(items) ? items : []);
-    } else {
-      setVaultItems([]);
-    }
-
-    setIsLocked(false);
-  };
-
-  /**
-   * Unlock with Master Password
-   */
-  const unlockWithMasterPassword = async (masterPassword) => {
-    const meta = storageService.getVaultMeta();
-    if (!meta || !meta.wrappedByMaster) throw new Error('ไม่พบข้อมูล Vault');
-
-    const masterDerivedKey = await deriveKey(masterPassword, meta.masterSalt);
-    const rawVaultKeyBase64 = await decryptData(
-      meta.wrappedByMaster.ciphertext,
-      meta.wrappedByMaster.iv,
-      masterDerivedKey
-    );
-
-    const vaultKey = await importRawKey(rawVaultKeyBase64);
-    activeVaultKeyRef.current = vaultKey;
-
-    const encryptedData = storageService.getEncryptedVaultData();
-    if (encryptedData) {
-      const items = await decryptData(encryptedData.ciphertext, encryptedData.iv, vaultKey);
-      setVaultItems(Array.isArray(items) ? items : []);
-    } else {
-      setVaultItems([]);
-    }
-
-    setIsLocked(false);
-  };
-
-  /**
-   * Unlock with Emergency Recovery Key
-   */
-  const unlockWithEmergencyKey = async (emergencyKey) => {
-    const cleanKey = emergencyKey.trim().toUpperCase();
-    const meta = storageService.getVaultMeta();
-    if (!meta || !meta.wrappedByRecovery) throw new Error('ไม่พบข้อมูล Vault');
-
-    const recoveryDerivedKey = await deriveKey(cleanKey, meta.recoverySalt);
-    const rawVaultKeyBase64 = await decryptData(
-      meta.wrappedByRecovery.ciphertext,
-      meta.wrappedByRecovery.iv,
-      recoveryDerivedKey
-    );
-
-    const vaultKey = await importRawKey(rawVaultKeyBase64);
-    activeVaultKeyRef.current = vaultKey;
-
-    const encryptedData = storageService.getEncryptedVaultData();
-    if (encryptedData) {
-      const items = await decryptData(encryptedData.ciphertext, encryptedData.iv, vaultKey);
-      setVaultItems(Array.isArray(items) ? items : []);
-    } else {
-      setVaultItems([]);
-    }
-
-    setIsLocked(false);
-  };
-
-  /**
-   * Lock Vault
-   */
-  const lockVault = () => {
-    activeVaultKeyRef.current = null;
-    setVaultItems([]);
-    setIsLocked(true);
-  };
-
-  /**
-   * Persist Vault Items (Encrypt & Save & Sync)
-   */
-  const persistItems = async (items) => {
-    if (!activeVaultKeyRef.current) throw new Error('Vault is locked');
-
-    const encryptedVaultData = await encryptData(items, activeVaultKeyRef.current);
-    storageService.setEncryptedVaultData(encryptedVaultData);
-
-    const meta = storageService.getVaultMeta();
-    if (meta) {
-      meta.updatedAt = new Date().toISOString();
-      storageService.setVaultMeta(meta);
-    }
-
-    // Auto-sync to Firebase if connected
-    if (firebaseService.isConfigured()) {
-      triggerCloudSync(meta, encryptedVaultData);
-    }
-  };
-
-  /**
-   * Cloud Sync Trigger
-   */
-  const triggerCloudSync = async (metaOverride, dataOverride) => {
-    if (!firebaseService.isConfigured()) return;
-    setSyncStatus('syncing');
-
-    const meta = metaOverride || storageService.getVaultMeta();
-    const data = dataOverride || storageService.getEncryptedVaultData();
-
-    const result = await firebaseService.uploadVault(meta, data);
-    if (result.success) {
-      setSyncStatus('synced');
-      setLastSynced(new Date().toLocaleTimeString('th-TH'));
-    } else {
-      setSyncStatus('error');
-    }
-  };
-
-  /**
-   * CRUD: Add or Update Item
-   */
-  const saveVaultItem = async (itemData) => {
-    const isNew = !itemData.id;
-    const now = new Date().toISOString();
-
-    const item = {
-      ...itemData,
-      id: itemData.id || `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      updatedAt: now,
-      createdAt: itemData.createdAt || now,
-      favorite: !!itemData.favorite
-    };
-
-    let updatedItems;
-    if (isNew) {
-      updatedItems = [item, ...vaultItems];
-    } else {
-      updatedItems = vaultItems.map(it => it.id === item.id ? item : it);
-    }
-
-    setVaultItems(updatedItems);
-    await persistItems(updatedItems);
-    return item;
-  };
-
-  /**
-   * CRUD: Delete Item
-   */
-  const deleteVaultItem = async (id) => {
-    const updatedItems = vaultItems.filter(it => it.id !== id);
-    setVaultItems(updatedItems);
-    await persistItems(updatedItems);
-  };
-
-  /**
-   * Toggle Favorite
-   */
-  const toggleFavorite = async (id) => {
-    const updatedItems = vaultItems.map(it =>
-      it.id === id ? { ...it, favorite: !it.favorite } : it
-    );
-    setVaultItems(updatedItems);
-    await persistItems(updatedItems);
-  };
-
-  /**
-   * Reset/Change PIN
-   */
-  const changePin = async (newPin) => {
-    if (!activeVaultKeyRef.current) throw new Error('Vault is locked');
-
-    const meta = storageService.getVaultMeta();
-    const rawVaultKeyBase64 = await exportRawKey(activeVaultKeyRef.current);
-
-    const pinSalt = generateSalt(16);
-    const pinDerivedKey = await deriveKey(newPin, pinSalt);
-    const wrappedByPin = await encryptData(rawVaultKeyBase64, pinDerivedKey);
-
-    meta.pinSalt = pinSalt;
-    meta.wrappedByPin = wrappedByPin;
-    meta.updatedAt = new Date().toISOString();
-
-    storageService.setVaultMeta(meta);
-    if (firebaseService.isConfigured()) {
-      triggerCloudSync(meta);
-    }
-  };
-
-  /**
-   * Reset/Change Master Password
-   */
-  const changeMasterPassword = async (newMasterPassword) => {
-    if (!activeVaultKeyRef.current) throw new Error('Vault is locked');
-
-    const meta = storageService.getVaultMeta();
-    const rawVaultKeyBase64 = await exportRawKey(activeVaultKeyRef.current);
-
-    const masterSalt = generateSalt(16);
-    const masterDerivedKey = await deriveKey(newMasterPassword, masterSalt);
-    const wrappedByMaster = await encryptData(rawVaultKeyBase64, masterDerivedKey);
-
-    meta.masterSalt = masterSalt;
-    meta.wrappedByMaster = wrappedByMaster;
-    meta.updatedAt = new Date().toISOString();
-
-    storageService.setVaultMeta(meta);
-    if (firebaseService.isConfigured()) {
-      triggerCloudSync(meta);
-    }
-  };
-
-  /**
-   * Copy to Clipboard with auto-wipe security
-   */
-  const copyToClipboard = async (text, isSensitive = true) => {
-    try {
-      await navigator.clipboard.writeText(text);
-
-      if (isSensitive && settings.clearClipboardSeconds > 0) {
-        if (clipboardClearTimerRef.current) clearTimeout(clipboardClearTimerRef.current);
-
-        clipboardClearTimerRef.current = setTimeout(async () => {
-          try {
-            // Check if clipboard still holds the sensitive text before clearing
-            const current = await navigator.clipboard.readText();
-            if (current === text) {
-              await navigator.clipboard.writeText('');
-            }
-          } catch {
-            // Ignore if clipboard reading fails
-          }
-        }, settings.clearClipboardSeconds * 1000);
-      }
-      return true;
-    } catch (e) {
-      console.error('Failed to copy', e);
-      return false;
-    }
-  };
-
-  /**
-   * Save Settings
-   */
-  const updateSettings = (newSettings) => {
-    const merged = { ...settings, ...newSettings };
-    setSettings(merged);
-    storageService.setSettings(merged);
-
-    if (newSettings.firebaseConfig) {
-      firebaseService.init(newSettings.firebaseConfig);
-    }
-  };
-
-  /**
-   * Export Backup File (Encrypted JSON)
-   */
-  const exportEncryptedBackup = () => {
-    const meta = storageService.getVaultMeta();
-    const vault = storageService.getEncryptedVaultData();
-    const backupData = {
-      app: 'My Key',
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      meta,
-      vault
-    };
-
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mykey_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  /**
-   * Import Backup File
-   */
-  const importEncryptedBackup = (backupJsonString) => {
-    try {
-      const data = JSON.parse(backupJsonString);
-      if (!data.meta || !data.vault) {
-        throw new Error('รูปแบบไฟล์สำรองไม่ถูกต้อง');
-      }
-
-      storageService.setVaultMeta(data.meta);
-      storageService.setEncryptedVaultData(data.vault);
-      setIsSetup(true);
-      lockVault();
-      return { success: true };
-    } catch (err) {
-      return { success: false, message: err.message };
-    }
-  };
-
-  return (
-    <VaultContext.Provider
-      value={{
-        isSetup,
-        isLocked,
-        vaultItems,
-        settings,
-        syncStatus,
-        lastSynced,
-        activeCategory,
-        searchQuery,
-        isStealthMode,
-        toggleStealthMode,
-        setTheme: (t) => updateSettings({ theme: t }),
-        setActiveCategory,
-        setSearchQuery,
-        setupNewVault,
-        unlockWithPin,
-        unlockWithMasterPassword,
-        unlockWithEmergencyKey,
-        lockVault,
-        saveVaultItem,
-        deleteVaultItem,
-        toggleFavorite,
-        changePin,
-        changeMasterPassword,
-        copyToClipboard,
-        updateSettings,
-        triggerCloudSync,
-        exportEncryptedBackup,
-        importEncryptedBackup
-      }}
-    >
-      {children}
-    </VaultContext.Provider>
-  );
-}
-
-export const useVault = () => {
-  const context = useContext(VaultContext);
-  if (!context) {
-    throw new Error('useVault must be used within a VaultProvider');
+  async function afterSave() {
+    if (store.payload) setPayload(structuredClone(store.payload));
+    try { await mirrorEnvelope(portableEnvelope(storageService.getEnvelope())); } catch { setError('บันทึกในแอปแล้ว แต่สำเนา Autofill ยังอัปเดตไม่ได้ กรุณาเปิดแอปใหม่ก่อนใช้ Autofill'); }
+    if (settings.firebaseConfig && (await firebaseService.account())?.email) triggerCloudSync().catch(() => {});
   }
-  return context;
-};
+  const unlock = async (password, mode) => {
+    const attempts = JSON.parse(sessionStorage.getItem('mykey_attempts') || '{"count":0,"until":0}');
+    if (Date.now() < attempts.until) throw new Error('ลองผิดหลายครั้ง กรุณารอหนึ่งนาที');
+    try {
+      await store.unlock(password, mode, settings.categories); sessionStorage.removeItem('mykey_attempts');
+    } catch (e) { attempts.count++; if (attempts.count >= 5) { attempts.until = Date.now() + 60000; attempts.count = 0; } sessionStorage.setItem('mykey_attempts', JSON.stringify(attempts)); throw e; }
+    // Legacy PIN remains local only until user explicitly upgrades with their master password.
+    show();
+    try { await mirrorEnvelope(portableEnvelope(store.envelope)); await refreshNative(); }
+    catch { setError('ปลดล็อกสำเร็จ แต่สำเนา Autofill ยังอัปเดตไม่ได้ กรุณาลองเปิดแอปใหม่'); }
+  };
+  const setupNewVault = async master => { const emergencyKey = await store.create(master, settings.categories); return { success: true, emergencyKey }; };
+  const completeSetup = async () => {
+    if (!store.key) { setIsSetup(true); setIsLocked(true); return; }
+    show();
+    try { await mirrorEnvelope(portableEnvelope(store.envelope)); await refreshNative(); }
+    catch { setError('สร้างตู้นิรภัยแล้ว แต่สำเนา Autofill ยังอัปเดตไม่ได้ กรุณาลองเปิดแอปใหม่'); }
+  };
+  const mutate = async (action, data) => { try { await store.mutate(action, data); await afterSave(); } catch (e) { if (!store.key) lockVault(); throw e; } };
+  const verifyMaster = async password => { const session = store.session; const verified = await openEnvelope(storageService.getEnvelope(), password, 'master', settings.categories); if (!store.key || session !== store.session) throw new Error('กรุณาปลดล็อกอีกครั้ง'); return verified; };
+  const enableBiometrics = async password => {
+    const verified = await verifyMaster(password), session = store.session;
+    await mirrorEnvelope(portableEnvelope(storageService.getEnvelope()));
+    await NativeVault.enroll({ rawKey: await exportRawKey(verified.key), vaultId: store.envelope.meta.vaultId || store.envelope.meta.createdAt });
+    if (session !== store.session) { await NativeVault.disable(); throw new Error('แอปถูกพัก กรุณาเปิดสแกนนิ้วใหม่'); }
+    await store.removeLegacyPin(); await afterSave(); await refreshNative();
+  };
+  const unlockBiometrics = async () => {
+    const session = store.session;
+    const result = await NativeVault.unlock();
+    if (session !== store.session || document.visibilityState === 'hidden') throw new Error('ยกเลิกการปลดล็อก');
+    await store.unlockKey(await importRawKey(result.rawKey), settings.categories); show();
+  };
+  const recordBackupStatus = patch => { const status = { ...storageService.getBackupStatus(), ...patch }; storageService.setBackupStatus(status); setBackupStatus(status); };
+  const exportEncryptedBackup = async () => {
+    const envelope = portableEnvelope(storageService.getEnvelope());
+    if (!store.key) throw new Error('กรุณาปลดล็อกก่อน');
+    await downloadFile(`mykey_backup_${Date.now()}.json`, JSON.stringify(envelope, null, 2));
+    recordBackupStatus({ exportedAt: new Date().toISOString(), count: store.payload?.items.length || 0 });
+  };
+  const checkBackup = async (text, password, mode = 'master', stage = false) => {
+    const session = store.session, envelope = parseBackup(text);
+    const result = await openEnvelope(envelope, password, mode, settings.categories);
+    if (session !== store.session) throw new Error('เซสชันเปลี่ยน กรุณาตรวจไฟล์อีกครั้ง');
+    const summary = { count: result.payload.items.length, trash: result.payload.trash.length, checkedAt: new Date().toISOString() };
+    recordBackupStatus({ testedAt: summary.checkedAt, testedCount: summary.count });
+    pendingImport.current = stage ? { envelope: portableEnvelope(envelope), ...result, session } : null;
+    return summary;
+  };
+  const commitImport = async mode => {
+    const pending = pendingImport.current;
+    if (!pending || pending.session !== store.session) throw new Error('กรุณาตรวจไฟล์และรหัสก่อนนำเข้า');
+    if (mode === 'merge') { await store.merge(pending.payload); await afterSave(); }
+    else if (mode === 'replace') {
+      await store.queue;
+      if (pending.session !== store.session) throw new Error('เซสชันเปลี่ยน');
+      // Invalidate native credentials first: an old biometric must not open a replaced vault.
+      if (isAndroid) await NativeVault.disable();
+      storageService.saveEnvelope(pending.envelope, true); store.lock();
+      setPayload(null); setIsSetup(true); setIsLocked(true); await mirrorEnvelope(pending.envelope); await refreshNative();
+    } else throw new Error('เลือกวิธีนำเข้า');
+    pendingImport.current = null;
+  };
+  const copyToClipboard = async (text, sensitive = true) => {
+    try {
+      if (isAndroid) await NativeVault.copy({ text, seconds: sensitive ? settings.clearClipboardSeconds || 30 : 0 });
+      else { await navigator.clipboard.writeText(text); if (sensitive) { clearTimeout(clipboardTimer.current); clipboardTimer.current = setTimeout(async () => { try { if (await navigator.clipboard.readText() === text) await navigator.clipboard.writeText(''); } catch { /* Browser may prohibit background reads. */ } }, (settings.clearClipboardSeconds || 30) * 1000); } }
+      return true;
+    } catch { setError('คัดลอกไม่สำเร็จ กรุณาลองใหม่'); return false; }
+  };
+  const rotateRecovery = async master => {
+    await verifyMaster(master); const secret = generateEmergencyKey();
+    await store.rotateRecovery(secret); await afterSave(); return secret;
+  };
+  const value = { isSetup, isLocked, vaultItems: payload?.items || [], trashItems: payload?.trash || [], history: payload?.history || {},
+    settings: { ...settings, categories: payload?.categories || settings.categories }, error, setError, syncStatus, lastSynced, backupStatus,
+    biometrics, refreshNative, enableBiometrics, unlockBiometrics, disableBiometrics: async () => { await NativeVault.disable(); await refreshNative(); },
+    activeCategory, setActiveCategory, searchQuery, setSearchQuery, isStealthMode, toggleStealthMode: () => setIsStealthMode(v => !v),
+    setupNewVault, completeSetup, lockVault, unlockWithPin: p => unlock(p, 'pin'), unlockWithMasterPassword: p => unlock(p, 'master'), unlockWithEmergencyKey: p => unlock(p, 'recovery'),
+    saveVaultItem: data => mutate('save', data), deleteVaultItem: id => mutate('delete', id), restoreItem: id => mutate('restore', id), restoreHistory: (id, index) => mutate('history', { id, index }), toggleFavorite: id => mutate('favorite', id),
+    changeMasterPassword: async (password, old) => { await verifyMaster(old); await store.changeMaster(password); await afterSave(); },
+    removeLegacyPin: async master => { await verifyMaster(master); await store.removeLegacyPin(); await afterSave(); }, rotateRecovery,
+    hasLegacyPin: !!storageService.getVaultMeta()?.wrappedByPin,
+    updateSettings, setTheme: theme => updateSettings({ theme }), copyToClipboard, triggerCloudSync, exportEncryptedBackup, checkBackup, commitImport,
+  };
+  return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;
+}
+export function useVault() { return useContext(VaultContext); }

@@ -1,595 +1,68 @@
 import React, { useState } from 'react';
-import {
-  X, Cloud, Lock, Shield, KeyRound, Download, Upload, Trash2,
-  CheckCircle2, AlertTriangle, RefreshCw, Eye, EyeOff, FileText, Database,
-  Palette, Printer, Check
-} from 'lucide-react';
 import { useVault } from '../context/VaultContext';
 import { storageService } from '../services/storage';
-
-const THEMES_LIST = [
-  { id: 'emerald', name: 'Cyber Emerald', desc: 'โทนเขียวมรกต แฮกเกอร์ & ไซเบอร์ (ค่าเริ่มต้น)', color: 'bg-emerald-500', border: 'border-emerald-500' },
-  { id: 'violet', name: 'Midnight Violet', desc: 'โทนม่วงเข้ม ลึกลับ หรูหรา ไนท์โหมด', color: 'bg-purple-500', border: 'border-purple-500' },
-  { id: 'blue', name: 'Cyberpunk Blue', desc: 'โทนน้ำเงิน-ฟ้า นีออน ดิจิทัลไฮเทค', color: 'bg-blue-500', border: 'border-blue-500' },
-  { id: 'gold', name: 'Obsidian Gold', desc: 'โทนดำตัดทอง พรีเมียม เลอค่า', color: 'bg-amber-500', border: 'border-amber-500' },
-  { id: 'rose', name: 'Crimson Rose', desc: 'โทนแดงกุหลาบ โฉบเฉี่ยว ทันสมัย', color: 'bg-rose-500', border: 'border-rose-500' }
-];
-
-export default function SettingsModal({ isOpen, onClose, initialTab = 'cloud', onOpenPrint }) {
-  const {
-    settings,
-    updateSettings,
-    syncStatus,
-    lastSynced,
-    triggerCloudSync,
-    changePin,
-    changeMasterPassword,
-    exportEncryptedBackup,
-    importEncryptedBackup
-  } = useVault();
-
-  const [activeTab, setActiveTab] = useState(initialTab); // 'cloud' | 'security' | 'backup'
-
-  // Firebase Config State
-  const [firebaseJson, setFirebaseJson] = useState(() => {
-    return settings.firebaseConfig ? JSON.stringify(settings.firebaseConfig, null, 2) : '';
-  });
-  const [cloudMsg, setCloudMsg] = useState({ type: '', text: '' });
-
-  // PIN change state
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [pinMsg, setPinMsg] = useState({ type: '', text: '' });
-
-  // Master Password change state
-  const [newMaster, setNewMaster] = useState('');
-  const [confirmMaster, setConfirmMaster] = useState('');
-  const [showNewMaster, setShowNewMaster] = useState(false);
-  const [masterMsg, setMasterMsg] = useState({ type: '', text: '' });
-
-  // Reset state
-  const [confirmReset, setConfirmReset] = useState(false);
-
-  if (!isOpen) return null;
-
-  // Handle Firebase Config Save
-  const handleSaveFirebase = (e) => {
-    e.preventDefault();
-    setCloudMsg({ type: '', text: '' });
-
-    try {
-      if (!firebaseJson.trim()) {
-        updateSettings({ firebaseConfig: null });
-        setCloudMsg({ type: 'success', text: 'ยกเลิกการเชื่อมต่อ Firebase เรียบร้อย' });
-        return;
-      }
-
-      const parsed = JSON.parse(firebaseJson);
-      if (!parsed.apiKey || !parsed.projectId) {
-        throw new Error('JSON ต้องมีอย่างน้อย apiKey และ projectId');
-      }
-
-      updateSettings({ firebaseConfig: parsed });
-      setCloudMsg({ type: 'success', text: 'บันทึกการตั้งค่า Firebase สำเร็จ! กำลังทดสอบซิงก์...' });
-      triggerCloudSync();
-    } catch (err) {
-      setCloudMsg({ type: 'error', text: 'รูปแบบ JSON ไม่ถูกต้อง: ' + err.message });
-    }
-  };
-
-  // Handle PIN change
-  const handleChangePin = async (e) => {
-    e.preventDefault();
-    setPinMsg({ type: '', text: '' });
-
-    if (!/^\d{4,6}$/.test(newPin)) {
-      setPinMsg({ type: 'error', text: 'PIN ต้องเป็นตัวเลข 4-6 หลักเท่านั้น' });
-      return;
-    }
-    if (newPin !== confirmPin) {
-      setPinMsg({ type: 'error', text: 'รหัส PIN ทั้งสองช่องไม่ตรงกัน' });
-      return;
-    }
-
-    try {
-      await changePin(newPin);
-      setNewPin('');
-      setConfirmPin('');
-      setPinMsg({ type: 'success', text: 'เปลี่ยนรหัส PIN เรียบร้อยแล้ว' });
-    } catch (err) {
-      setPinMsg({ type: 'error', text: err.message });
-    }
-  };
-
-  // Handle Master Password change
-  const handleChangeMaster = async (e) => {
-    e.preventDefault();
-    setMasterMsg({ type: '', text: '' });
-
-    if (newMaster.length < 8) {
-      setMasterMsg({ type: 'error', text: 'Master Password ต้องมีความยาวอย่างน้อย 8 ตัวอักษร' });
-      return;
-    }
-    if (newMaster !== confirmMaster) {
-      setMasterMsg({ type: 'error', text: 'รหัสผ่านทั้งสองช่องไม่ตรงกัน' });
-      return;
-    }
-
-    try {
-      await changeMasterPassword(newMaster);
-      setNewMaster('');
-      setConfirmMaster('');
-      setMasterMsg({ type: 'success', text: 'เปลี่ยน Master Password เรียบร้อยแล้ว' });
-    } catch (err) {
-      setMasterMsg({ type: 'error', text: err.message });
-    }
-  };
-
-  // Handle Import Backup
-  const handleImportFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const res = importEncryptedBackup(event.target.result);
-      if (res.success) {
-        alert('นำเข้าไฟล์สำรองสำเร็จ! ระบบจะทำการรีโหลดหน้าจอเพื่อปลดล็อก');
-        window.location.reload();
-      } else {
-        alert('เกิดข้อผิดพลาดในการนำเข้า: ' + res.message);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  // Handle Factory Reset
-  const handleFactoryReset = () => {
-    storageService.clearAll();
-    window.location.reload();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="w-full max-w-xl bg-surface-900 border border-slate-700/80 rounded-3xl shadow-2xl relative my-6 max-h-[90vh] flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-800">
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <Shield className="w-4 h-4 text-emerald-400" />
-            <span>การตั้งค่า My Key</span>
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-surface-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Tabs Bar */}
-        <div className="flex border-b border-slate-800 bg-surface-950 px-4">
-          <button
-            type="button"
-            onClick={() => setActiveTab('cloud')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === 'cloud'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Cloud className="w-4 h-4" />
-            <span>Firebase Sync</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('security')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === 'security'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Lock className="w-4 h-4" />
-            <span>ความปลอดภัย & PIN</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('backup')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === 'backup'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            <span>สำรอง & กู้คืน</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('theme')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === 'theme'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Palette className="w-4 h-4" />
-            <span>ธีมสี</span>
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-5 overflow-y-auto space-y-5 text-xs flex-1">
-          {/* TAB 1: FIREBASE CLOUD SYNC */}
-          {activeTab === 'cloud' && (
-            <div className="space-y-4">
-              <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3.5 text-emerald-300 space-y-1.5">
-                <p className="font-bold flex items-center gap-1.5 text-emerald-400">
-                  <Shield className="w-4 h-4" />
-                  <span>ระบบสำรองข้อมูลอัตโนมัติป้องกันมือถือหาย (Zero-Knowledge)</span>
-                </p>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  ข้อมูลจะถูกส่งขึ้น Firebase ในรูปแบบ Ciphertext ที่เข้ารหัสแล้วเท่านั้น ทาง Firebase หรือแฮกเกอร์จะไม่สามารถเปิดดูรหัสผ่านจริงของคุณได้
-                </p>
-              </div>
-
-              {/* Status card */}
-              <div className="bg-surface-850 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
-                <div>
-                  <span className="text-slate-400 text-[11px]">สถานะการเชื่อมต่อ:</span>
-                  <p className="font-bold text-sm text-white flex items-center gap-1.5 mt-0.5">
-                    {settings.firebaseConfig ? (
-                      <>
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
-                        <span className="text-emerald-400">เชื่อมต่อแล้ว</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" />
-                        <span className="text-slate-400">ยังไม่ได้เชื่อมต่อ</span>
-                      </>
-                    )}
-                  </p>
-                  {lastSynced && (
-                    <p className="text-[10px] text-slate-500 mt-0.5">ซิงก์ล่าสุด: {lastSynced}</p>
-                  )}
-                </div>
-
-                {settings.firebaseConfig && (
-                  <button
-                    type="button"
-                    onClick={triggerCloudSync}
-                    disabled={syncStatus === 'syncing'}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-800 hover:bg-surface-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-colors"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin text-amber-400' : ''}`} />
-                    <span>{syncStatus === 'syncing' ? 'กำลังซิงก์...' : 'ซิงก์ทันที'}</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Form Input for Firebase Config */}
-              <form onSubmit={handleSaveFirebase} className="space-y-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    วางการตั้งค่า Firebase Config (JSON) จาก Firebase Console
-                  </label>
-                  <textarea
-                    rows={6}
-                    value={firebaseJson}
-                    onChange={(e) => setFirebaseJson(e.target.value)}
-                    placeholder={`{\n  "apiKey": "AIzaSy...",\n  "authDomain": "mykey-vault.firebaseapp.com",\n  "projectId": "mykey-vault",\n  "storageBucket": "mykey-vault.appspot.com",\n  "messagingSenderId": "...",\n  "appId": "..."\n}`}
-                    className="w-full bg-surface-950 font-mono text-[11px] border border-slate-700 rounded-xl p-3 text-emerald-400 placeholder-slate-600 focus:outline-none focus:border-emerald-500 resize-none"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    * วิธีหา: ไปที่ Firebase Console → Project Settings → General → Your apps → SDK setup and configuration → เลือก Config
-                  </p>
-                </div>
-
-                {cloudMsg.text && (
-                  <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
-                    cloudMsg.type === 'success' ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300' : 'bg-red-950/50 border-red-500/40 text-red-300'
-                  }`}>
-                    {cloudMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-red-400" />}
-                    <span>{cloudMsg.text}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-surface-950 font-bold rounded-xl text-xs transition-colors shadow-lg shadow-emerald-950"
-                >
-                  บันทึกการตั้งค่า Firebase
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* TAB 2: SECURITY & TIMERS */}
-          {activeTab === 'security' && (
-            <div className="space-y-6">
-              {/* Change PIN Form */}
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-emerald-400" />
-                  <span>เปลี่ยนรหัส PIN ด่วน</span>
-                </h4>
-                <form onSubmit={handleChangePin} className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={newPin}
-                      onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
-                      placeholder="PIN ใหม่ (4-6 หลัก)"
-                      required
-                      className="w-full bg-surface-900 border border-slate-700 rounded-xl px-3 py-2 text-center font-mono text-white text-xs placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={confirmPin}
-                      onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                      placeholder="ยืนยัน PIN ใหม่"
-                      required
-                      className="w-full bg-surface-900 border border-slate-700 rounded-xl px-3 py-2 text-center font-mono text-white text-xs placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-
-                  {pinMsg.text && (
-                    <p className={`text-[11px] ${pinMsg.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {pinMsg.text}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-surface-800 hover:bg-slate-700 text-white font-semibold rounded-xl text-xs transition-colors"
-                  >
-                    อัปเดตรหัส PIN
-                  </button>
-                </form>
-              </div>
-
-              {/* Change Master Password Form */}
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-amber-400" />
-                  <span>เปลี่ยน Master Password</span>
-                </h4>
-                <form onSubmit={handleChangeMaster} className="space-y-2">
-                  <div className="relative">
-                    <input
-                      type={showNewMaster ? 'text' : 'password'}
-                      value={newMaster}
-                      onChange={(e) => setNewMaster(e.target.value)}
-                      placeholder="Master Password ใหม่ (ขั้นต่ำ 8 ตัวอักษร)"
-                      required
-                      className="w-full bg-surface-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-emerald-500 pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowNewMaster(!showNewMaster)}
-                      className="absolute right-3 top-2 text-slate-400 hover:text-white"
-                    >
-                      {showNewMaster ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                  <input
-                    type={showNewMaster ? 'text' : 'password'}
-                    value={confirmMaster}
-                    onChange={(e) => setConfirmMaster(e.target.value)}
-                    placeholder="ยืนยัน Master Password ใหม่"
-                    required
-                    className="w-full bg-surface-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-
-                  {masterMsg.text && (
-                    <p className={`text-[11px] ${masterMsg.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {masterMsg.text}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-surface-800 hover:bg-slate-700 text-white font-semibold rounded-xl text-xs transition-colors"
-                  >
-                    อัปเดต Master Password
-                  </button>
-                </form>
-              </div>
-
-              {/* Timers Settings */}
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm">การล็อกอัตโนมัติ & คลิปบอร์ด</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-400 text-[11px] mb-1">
-                      ล็อกตู้เซฟอัตโนมัติเมื่อไม่ใช้งาน
-                    </label>
-                    <select
-                      value={settings.autoLockMinutes}
-                      onChange={(e) => updateSettings({ autoLockMinutes: parseInt(e.target.value) })}
-                      className="w-full bg-surface-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value={1}>1 นาที</option>
-                      <option value={5}>5 นาที (แนะนำ)</option>
-                      <option value={15}>15 นาที</option>
-                      <option value={30}>30 นาที</option>
-                      <option value={0}>ปิด (ไม่ล็อกอัตโนมัติ)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 text-[11px] mb-1">
-                      ล้างข้อมูลรหัสในคลิปบอร์ดหลังคัดลอก
-                    </label>
-                    <select
-                      value={settings.clearClipboardSeconds}
-                      onChange={(e) => updateSettings({ clearClipboardSeconds: parseInt(e.target.value) })}
-                      className="w-full bg-surface-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value={15}>15 วินาที</option>
-                      <option value={30}>30 วินาที (แนะนำ)</option>
-                      <option value={60}>60 วินาที</option>
-                      <option value={0}>ปิด (ไม่ล้างคลิปบอร์ด)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: BACKUP & RECOVERY */}
-          {activeTab === 'backup' && (
-            <div className="space-y-4">
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Download className="w-4 h-4 text-teal-400" />
-                  <span>ส่งออกไฟล์สำรอง (Export Encrypted Backup)</span>
-                </h4>
-                <p className="text-slate-400 text-[11px]">
-                  ดาวน์โหลดไฟล์สำรองข้อมูลทั้งหมดในรูปแบบ <code>.json</code> ที่เข้ารหัสไว้แล้ว สำหรับเก็บไว้ใน Flash Drive หรือคอมพิวเตอร์ของคุณ
-                </p>
-                <button
-                  type="button"
-                  onClick={exportEncryptedBackup}
-                  className="w-full py-2.5 bg-surface-800 hover:bg-slate-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors border border-slate-700"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>ดาวน์โหลดไฟล์สำรอง (.json)</span>
-                </button>
-              </div>
-
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Upload className="w-4 h-4 text-emerald-400" />
-                  <span>นำเข้าไฟล์สำรอง (Import Backup)</span>
-                </h4>
-                <p className="text-slate-400 text-[11px]">
-                  นำเข้าไฟล์สำรอง <code>.json</code> เพื่อกู้คืนข้อมูลรหัสผ่านทั้งหมด
-                </p>
-                <label className="w-full py-2.5 bg-surface-800 hover:bg-slate-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors border border-slate-700 cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  <span>เลือกไฟล์เพื่อนำเข้า (.json)</span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportFile}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              {/* Printable Physical Sheet Card */}
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Printer className="w-4 h-4 text-teal-400" />
-                  <span>พิมพ์สมุดรหัสผ่านลับ (Print Physical Sheet)</span>
-                </h4>
-                <p className="text-slate-400 text-[11px]">
-                  จัดหน้ารูปแบบตารางขนาดกระดาษ A4 สะอาดตา สั่งพิมพ์ใส่กระดาษหรือบันทึกเป็น PDF เก็บไว้ในตู้เซฟที่บ้าน
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onOpenPrint?.();
-                  }}
-                  className="w-full py-2.5 bg-surface-800 hover:bg-slate-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors border border-slate-700"
-                >
-                  <Printer className="w-4 h-4 text-teal-400" />
-                  <span>เปิดหน้าต่างสั่งพิมพ์สมุดรหัสผ่าน</span>
-                </button>
-              </div>
-
-              {/* Danger Zone: Factory Reset */}
-              <div className="bg-red-950/20 border border-red-500/30 rounded-2xl p-4 space-y-2">
-                <h4 className="font-bold text-red-400 text-sm flex items-center gap-2">
-                  <Trash2 className="w-4 h-4" />
-                  <span>ล้างข้อมูลทั้งหมดในเครื่อง (Factory Reset)</span>
-                </h4>
-                <p className="text-slate-400 text-[11px]">
-                  ลบตู้เซฟและรหัสผ่านทั้งหมดออกจากเบราว์เซอร์/เครื่องนี้ (ข้อมูลบน Firebase จะไม่ถูกลบ)
-                </p>
-                {confirmReset ? (
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleFactoryReset}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-colors"
-                    >
-                      ยืนยันการล้างข้อมูล
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmReset(false)}
-                      className="px-3 py-2 text-slate-400 hover:text-white text-xs"
-                    >
-                      ยกเลิก
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmReset(true)}
-                    className="px-3 py-1.5 bg-red-950/50 hover:bg-red-900/60 border border-red-500/40 text-red-300 rounded-xl text-xs font-semibold transition-colors"
-                  >
-                    ล้างข้อมูลในเครื่อง
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: THEMES */}
-          {activeTab === 'theme' && (
-            <div className="space-y-4">
-              <div className="bg-surface-850 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Palette className="w-4 h-4 text-purple-400" />
-                  <span>เลือกธีมสีตู้เซฟ (Vault Accent Theme)</span>
-                </h4>
-                <p className="text-slate-400 text-[11px]">
-                  ปรับแต่งโทนสีหลักและแสงนีออนของแอปตามสไตล์ที่คุณชอบ
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                  {THEMES_LIST.map((th) => {
-                    const isSelected = (settings.theme || 'emerald') === th.id;
-                    return (
-                      <button
-                        key={th.id}
-                        type="button"
-                        onClick={() => updateSettings({ theme: th.id })}
-                        className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
-                          isSelected
-                            ? 'bg-surface-950 border-white/50 shadow-lg shadow-black/50 scale-[1.02]'
-                            : 'bg-surface-900/70 border-slate-800 hover:border-slate-700 hover:bg-surface-900'
-                        }`}
-                      >
-                        <div className={`w-9 h-9 rounded-xl ${th.color} flex items-center justify-center text-surface-950 font-bold shrink-0 shadow-md`}>
-                          {isSelected ? <Check className="w-5 h-5 text-surface-950 stroke-[3]" /> : null}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-bold text-white text-xs">{th.name}</p>
-                          <p className="text-[10px] text-slate-400 truncate">{th.desc}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+import { firebaseService } from '../services/firebase';
+import { isAndroid, NativeVault } from '../services/native';
+export const Field = props => <input {...props} className="w-full bg-surface-950 border border-slate-700 rounded-xl px-3 py-3 text-sm text-white" />;
+export const Action = ({ children, ...props }) => <button {...props} className="px-4 py-3 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{children}</button>;
+export function RestorePanel() {
+  const { checkBackup, commitImport, isLocked } = useVault();
+  const [text, setText] = useState(''), [password, setPassword] = useState(''), [mode, setMode] = useState('master');
+  const [summary, setSummary] = useState(null), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
+  const run = async fn => { setBusy(true); setMessage(''); try { await fn(); } catch(e) { setMessage(e.message); } finally { setBusy(false); } };
+  return <section className="space-y-3 rounded-xl border border-slate-700 p-4">
+    <h3 className="font-bold">ตรวจไฟล์สำรอง / กู้คืน</h3>
+    <p className="text-xs text-slate-400">ทดลองถอดรหัสในเครื่องก่อน ข้อมูลเดิมจะไม่เปลี่ยนจนกดนำเข้า รองรับไฟล์รุ่นเดิมด้วย Master Password หรือ Recovery Key</p>
+    <label className="block text-sm">เลือกไฟล์สำรอง JSON<input aria-label="เลือกไฟล์สำรอง" type="file" accept=".json,application/json" disabled={busy} className="block w-full mt-2" onChange={e => { const file = e.target.files?.[0]; setSummary(null); if (file) run(async () => { if(file.size > 12*1024*1024) throw new Error('ไฟล์ใหญ่เกิน 12 MB'); setText(await file.text()); }); }} /></label>
+    <button className="text-xs underline" onClick={() => run(async () => { const previous=storageService.getRollback(); if(!previous) throw new Error('ยังไม่มีสำเนาก่อนนำเข้า'); setText(JSON.stringify(previous)); setSummary(null); setMessage('เลือกสำเนาก่อนนำเข้าแล้ว กรุณากรอกรหัสของสำเนานั้น'); })}>ใช้สำเนาก่อนนำเข้าครั้งล่าสุด</button>
+    <select aria-label="รหัสที่ใช้ตรวจสำรอง" className="bg-surface-950 rounded-xl p-3 w-full" value={mode} onChange={e=>{setMode(e.target.value);setSummary(null);}}><option value="master">Master Password ของไฟล์</option><option value="recovery">Recovery Key ของไฟล์</option></select>
+    <Field type="password" autoComplete="off" aria-label="รหัสผ่านไฟล์สำรอง" placeholder="รหัสผ่านของไฟล์สำรอง" value={password} onChange={e=>{setPassword(e.target.value);setSummary(null);}} />
+    <Action disabled={!text || !password || busy} onClick={()=>run(async()=>{setSummary(null); const result=await checkBackup(text,password,mode,true);setSummary(result);setPassword('');setMessage('ทดลองกู้คืนผ่าน ข้อมูลเดิมยังไม่เปลี่ยน');})}>ทดลองกู้คืนโดยไม่เขียนทับ</Action>
+    {summary && <div className="space-y-3"><p>พบ {summary.count} รายการ และ {summary.trash} รายการในถังขยะ</p><div className="flex flex-wrap gap-2">
+      {!isLocked && <Action disabled={busy} onClick={()=>run(async()=>{await commitImport('merge');setSummary(null);setText('');setMessage('รวมรายการสำเร็จ');})}>รวมกับข้อมูลปัจจุบัน</Action>}
+      <Action disabled={busy} onClick={()=>run(async()=>{if(!window.confirm('แทนที่ตู้เซฟปัจจุบันด้วยไฟล์นี้? จะเก็บสำเนาก่อนนำเข้าไว้ให้')) return; await commitImport('replace');setSummary(null);setText('');setMessage('นำเข้าสำเร็จ กรุณาปลดล็อกด้วยรหัสของไฟล์');})}>นำเข้าแทนที่ตู้เซฟ</Action>
+    </div></div>}
+    {message && <p role="status" className="text-sm text-amber-300 break-words">{message}</p>}
+  </section>;
+}
+export function CloudPanel() {
+  const { settings, updateSettings, triggerCloudSync, lastSynced, checkBackup, commitImport } = useVault();
+  const [config,setConfig]=useState(JSON.stringify(settings.firebaseConfig || {},null,2)), [email,setEmail]=useState(''),[password,setPassword]=useState('');
+  const [master,setMaster]=useState(''),[account,setAccount]=useState(''),[download,setDownload]=useState(null),[checked,setChecked]=useState(null),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+  const run=async fn=>{setBusy(true);setMessage('');try{await fn();}catch(e){setMessage(e.message);}finally{setBusy(false);}};
+  return <section className="space-y-3"><h3 className="font-bold">บัญชีสำรอง Cloud</h3><p className="text-xs text-slate-400">ใช้อีเมลบัญชีเดียวกันบนทุกเครื่อง รหัสบัญชี Cloud แยกจาก Master Password ต้องเปิด Email/Password และตั้ง Firestore rules ใน Firebase ก่อน</p>
+    <details><summary>ตั้งค่า Firebase</summary><textarea aria-label="Firebase Config" className="w-full bg-surface-950 p-3 mt-2 text-xs" rows={6} value={config} onChange={e=>setConfig(e.target.value)} /><div className="flex gap-2"><Action disabled={busy} onClick={()=>run(async()=>{const parsed=JSON.parse(config);if(!parsed.apiKey||!parsed.projectId)throw new Error('Config ไม่ครบ');await updateSettings({firebaseConfig:parsed});setMessage('บันทึก config แล้ว กรุณาเข้าสู่ระบบ');})}>บันทึก Config</Action><Action disabled={busy} onClick={()=>run(async()=>{await updateSettings({firebaseConfig:null});setAccount('');setMessage('ปิด Cloud แล้ว');})}>ปิด Cloud</Action></div></details>
+    <Field aria-label="อีเมล Cloud" type="email" placeholder="อีเมลบัญชี Cloud" value={email} onChange={e=>setEmail(e.target.value)} />
+    <Field aria-label="รหัสบัญชี Cloud" type="password" placeholder="รหัสบัญชี Cloud (ไม่ใช่ Master Password)" value={password} onChange={e=>setPassword(e.target.value)} />
+    <div className="flex flex-wrap gap-2"><Action disabled={busy} onClick={()=>run(async()=>{const user=await firebaseService.login(email,password);setAccount(user.email);setPassword('');setMessage('เข้าสู่ระบบแล้ว');})}>เข้าสู่ระบบ</Action><Action disabled={busy} onClick={()=>run(async()=>{if(password.length<12)throw new Error('ตั้งรหัสบัญชีอย่างน้อย 12 ตัวอักษร'); const user=await firebaseService.login(email,password,true);setAccount(user.email);setPassword('');setMessage('สร้าง/เชื่อมบัญชีแล้ว');})}>สร้าง / เชื่อมบัญชีเดิม</Action></div>
+    <button className="text-xs underline" onClick={()=>run(async()=>{const user=await firebaseService.account();setAccount(user?.email||'');setMessage(user?.anonymous?'บัญชีเดิมเป็น anonymous กรุณาสร้าง/เชื่อมบัญชี':user?.email||'ยังไม่ได้เข้าสู่ระบบ');})}>ตรวจบัญชีที่เชื่อมต่อ</button>
+    {account && <p className="text-sm break-all">บัญชี: {account} <button className="underline" onClick={()=>run(async()=>{await firebaseService.logout();setAccount('');setDownload(null);})}>ออกจากระบบ Cloud</button></p>}
+    <p className="text-xs">ซิงก์สำเร็จในครั้งนี้: {lastSynced ? new Date(lastSynced).toLocaleString('th-TH') : 'ยังไม่มี'}</p>
+    <div className="flex flex-wrap gap-2"><Action disabled={busy} onClick={()=>run(async()=>{await triggerCloudSync();setMessage('ซิงก์สำเร็จ');})}>ซิงก์ทันที</Action><Action disabled={busy} onClick={()=>run(async()=>{setDownload(await firebaseService.downloadVault());setChecked(null);setMessage('ดาวน์โหลดข้อมูลเข้ารหัสแล้ว กรุณาตรวจด้วย Master Password');})}>ดึงข้อมูลจาก Cloud</Action></div>
+    {download && <div className="space-y-3"><Field type="password" aria-label="Master Password ของ Cloud" placeholder="Master Password ของข้อมูล Cloud" value={master} onChange={e=>{setMaster(e.target.value);setChecked(null);}} /><Action disabled={busy} onClick={()=>run(async()=>{setChecked(await checkBackup(JSON.stringify(download.envelope),master,'master',true));setMaster('');})}>ตรวจข้อมูล Cloud</Action>{checked&&<><p>{checked.count} รายการ พร้อมนำเข้า</p><Action disabled={busy} onClick={()=>run(async()=>{if(!window.confirm('แทนที่ด้วยข้อมูล Cloud ที่ตรวจแล้ว?'))return; await commitImport('replace');await firebaseService.acceptDownload(download);setDownload(null);setChecked(null);setMessage('กู้คืนแล้ว กรุณาปลดล็อก');})}>กู้คืนตู้เซฟจาก Cloud</Action></>}</div>}
+    {message&&<p role="status" className="text-sm text-amber-300 break-words">{message}</p>}
+  </section>;
+}
+export function DevicePanel() {
+  const vault=useVault();const [master,setMaster]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[next,setNext]=useState(''),[recovery,setRecovery]=useState('');
+  const run=async fn=>{setBusy(true);setMessage('');try{await fn();setMaster('');}catch(e){setMessage(e.message);}finally{setBusy(false);}};
+  return <section className="space-y-4"><p className="text-sm">ล็อกทันทีเมื่อสลับออกจากแอป และซ่อนภาพในหน้ารวมแอปล่าสุดบน Android</p>
+    <label className="block text-sm">ล็อกเมื่อไม่ใช้งาน<select aria-label="เวลาล็อกอัตโนมัติ" className="w-full bg-surface-950 p-3 rounded-xl" value={vault.settings.autoLockMinutes} onChange={e=>run(()=>vault.updateSettings({autoLockMinutes:Number(e.target.value)}))}>{[1,2,5,10].map(n=><option key={n} value={n}>{n} นาที</option>)}</select></label>
+    <Field type="password" autoComplete="off" aria-label="ยืนยัน Master Password" placeholder="Master Password ปัจจุบัน เพื่อยืนยันการเปลี่ยนความปลอดภัย" value={master} onChange={e=>setMaster(e.target.value)} />
+    <h3 className="font-bold">สแกนนิ้ว / ไบโอเมตริก</h3><p className="text-xs text-slate-400">{isAndroid?'ต้องมีไบโอเมตริกที่ปลอดภัยและลงทะเบียนไว้ในเครื่อง Android 9 ขึ้นไป':'ใช้ได้ในแอป Android; เว็บใช้ Master Password'}</p>
+    <p className="text-sm">{vault.biometrics.enrolled?'เปิดใช้งานแล้ว':'ยังไม่เปิดใช้งาน'}</p><div className="flex flex-wrap gap-2"><Action disabled={!isAndroid||!vault.biometrics.available||!master||busy} onClick={()=>run(async()=>{await vault.enableBiometrics(master);setMessage('เปิดสแกนนิ้วแล้ว และยกเลิก PIN แบบเดิมในเครื่องนี้');})}>เปิดสแกนนิ้ว</Action>{vault.biometrics.enrolled&&<Action disabled={busy} onClick={()=>run(()=>vault.disableBiometrics())}>ปิดสแกนนิ้ว</Action>}</div>
+    {vault.hasLegacyPin&&<Action disabled={!master||busy} onClick={()=>run(async()=>{await vault.removeLegacyPin(master);setMessage('ยกเลิก PIN เดิมแล้ว');})}>ยกเลิก PIN เดิม ใช้ Master Password</Action>}
+    <h3 className="font-bold">Autofill บน Android</h3><p className="text-xs text-slate-400">เลือกแอปเป้าหมายในรายละเอียดรหัสก่อน จากนั้นเลือก My Key เป็นบริการกรอกอัตโนมัติ ยืนยันสแกนนิ้วและเลือกรายการทุกครั้ง รุ่นนี้รองรับฟอร์มแอป Android โดยตรง ยังไม่กรอกหน้าเว็บในเบราว์เซอร์/WebView</p><Action disabled={!isAndroid||!vault.biometrics.enrolled||busy} onClick={()=>run(()=>NativeVault.openAutofillSettings())}>เลือก My Key เป็นบริการ Autofill</Action>
+    <h3 className="font-bold">เปลี่ยน Master Password</h3><Field type="password" aria-label="Master Password ใหม่" placeholder="รหัสใหม่อย่างน้อย 12 ตัวอักษร" value={next} onChange={e=>setNext(e.target.value)} /><Action disabled={!master||next.length<12||busy} onClick={()=>run(async()=>{await vault.changeMasterPassword(next,master);setNext('');setMessage('เปลี่ยน Master Password แล้ว กรุณาสำรองไฟล์ใหม่');})}>บันทึก Master Password ใหม่</Action>
+    <h3 className="font-bold">กุญแจฉุกเฉิน</h3><Action disabled={!master||busy} onClick={()=>run(async()=>{if(!window.confirm('สร้างกุญแจใหม่? กุญแจเดิมจะเปิดข้อมูลฉบับปัจจุบันไม่ได้'))return;setRecovery(await vault.rotateRecovery(master));})}>สร้าง Recovery Key ใหม่</Action>{recovery&&<div className="rounded-xl border border-amber-500 p-4"><p className="text-xs">จดกุญแจนี้ในที่ปลอดภัย แล้วสำรองไฟล์ใหม่</p><code className="block break-all select-all my-3">{recovery}</code><button onClick={()=>setRecovery('')}>บันทึกแล้ว / ซ่อนกุญแจ</button></div>}
+    {message&&<p role="status" className="text-amber-300 text-sm">{message}</p>}
+  </section>;
+}
+export default function SettingsModal({ isOpen, onClose, initialTab='security' }) {
+  const vault=useVault();const [active,setActive]=useState(initialTab),[message,setMessage]=useState('');
+  if(!isOpen)return null;
+  return <div className="fixed inset-0 z-50 bg-black/80 p-3 flex items-center justify-center"><div role="dialog" aria-modal="true" aria-label="การตั้งค่า My Key" className="w-full max-w-xl max-h-[90dvh] flex flex-col bg-surface-900 border border-slate-700 rounded-2xl"><div className="p-4 flex justify-between"><h2 className="font-bold">การตั้งค่า My Key</h2><button aria-label="ปิดการตั้งค่า" onClick={onClose}>ปิด</button></div><div className="flex overflow-x-auto border-y border-slate-700">{[['security','ความปลอดภัย'],['backup','สำรอง / กู้คืน'],['cloud','Cloud'],['theme','ธีม']].map(([id,label])=><button key={id} className={`shrink-0 px-4 py-3 text-sm ${active===id?'text-emerald-400':'text-slate-400'}`} onClick={()=>setActive(id)}>{label}</button>)}</div><div className="p-4 overflow-y-auto space-y-4">
+    {active==='security'&&<DevicePanel/>}{active==='cloud'&&<CloudPanel/>}{active==='backup'&&<><p className="text-sm">ส่งออกล่าสุด: {vault.backupStatus.exportedAt?new Date(vault.backupStatus.exportedAt).toLocaleString('th-TH'):'ยังไม่มี'} ({vault.backupStatus.count||0} รายการ)</p><p className="text-xs text-slate-400">บนเว็บเวลานี้หมายถึงเริ่มดาวน์โหลด กรุณาตรวจไฟล์ที่บันทึกจริง</p><p className="text-sm">ทดลองกู้คืนล่าสุด: {vault.backupStatus.testedAt?new Date(vault.backupStatus.testedAt).toLocaleString('th-TH'):'ยังไม่เคยตรวจ'}</p><Action onClick={async()=>{try{await vault.exportEncryptedBackup();setMessage('ส่งออกไฟล์สำรองแล้ว');}catch(e){setMessage(e.message);}}}>ดาวน์โหลดไฟล์สำรอง</Action>{message&&<p role="status">{message}</p>}<RestorePanel/></>}
+    {active==='theme'&&<div className="flex flex-wrap gap-3">{['emerald','violet','blue','gold','rose'].map(theme=><Action key={theme} onClick={()=>vault.setTheme(theme).catch(e=>setMessage(e.message))}>{theme}</Action>)}</div>}
+  </div></div></div>;
 }

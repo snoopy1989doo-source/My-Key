@@ -5,7 +5,7 @@ import { useVault } from '../context/VaultContext';
 export default function PrintVaultModal({ isOpen, onClose }) {
   const { vaultItems, settings } = useVault();
 
-  const [maskPasswords, setMaskPasswords] = useState(false);
+  const [maskPasswords, setMaskPasswords] = useState(true);
   const [includePins, setIncludePins] = useState(true);
   const [includeNotes, setIncludeNotes] = useState(true);
 
@@ -27,10 +27,10 @@ export default function PrintVaultModal({ isOpen, onClose }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="w-full max-w-4xl bg-surface-900 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative my-6 max-h-[95vh] flex flex-col no-print">
+    <div className="print-vault fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+      <div className="w-full max-w-4xl bg-surface-900 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative my-6 max-h-[95vh] flex flex-col">
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+        <div className="no-print flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
               <Printer className="w-5 h-5" />
@@ -50,7 +50,7 @@ export default function PrintVaultModal({ isOpen, onClose }) {
         </div>
 
         {/* Print Options */}
-        <div className="bg-surface-850 border border-slate-800 rounded-2xl p-3.5 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="no-print bg-surface-850 border border-slate-800 rounded-2xl p-3.5 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
               <input

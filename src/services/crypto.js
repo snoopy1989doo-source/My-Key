@@ -26,7 +26,7 @@ export function base64ToBuffer(base64) {
 // Helper: Generate cryptographically secure random bytes
 export function getRandomBytes(length = 16) {
   const bytes = new Uint8Array(length);
-  window.crypto.getRandomValues(bytes);
+  globalThis.crypto.getRandomValues(bytes);
   return bytes;
 }
 
@@ -63,7 +63,7 @@ export async function deriveKey(passphrase, saltBase64, iterations = 120000) {
   const saltBuffer = base64ToBuffer(saltBase64);
 
   // Import raw passphrase as a key
-  const baseKey = await window.crypto.subtle.importKey(
+  const baseKey = await globalThis.crypto.subtle.importKey(
     'raw',
     passphraseBytes,
     { name: 'PBKDF2' },
@@ -72,7 +72,7 @@ export async function deriveKey(passphrase, saltBase64, iterations = 120000) {
   );
 
   // Derive AES-GCM-256 key
-  return await window.crypto.subtle.deriveKey(
+  return await globalThis.crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: saltBuffer,
@@ -100,7 +100,7 @@ export async function encryptData(data, key) {
   // 12-byte IV for AES-GCM
   const iv = getRandomBytes(12);
 
-  const encryptedBuffer = await window.crypto.subtle.encrypt(
+  const encryptedBuffer = await globalThis.crypto.subtle.encrypt(
     {
       name: 'AES-GCM',
       iv
@@ -127,7 +127,7 @@ export async function decryptData(ciphertextBase64, ivBase64, key) {
     const ciphertextBuffer = base64ToBuffer(ciphertextBase64);
     const ivBuffer = base64ToBuffer(ivBase64);
 
-    const decryptedBuffer = await window.crypto.subtle.decrypt(
+    const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
         iv: ivBuffer
@@ -152,25 +152,14 @@ export async function decryptData(ciphertextBase64, ivBase64, key) {
 /**
  * Generate a cryptographically strong random password
  */
-export function generatePassword({
-  length = 18,
-  useUpper = true,
-  useLower = true,
-  useNumbers = true,
-  useSymbols = true
-}) {
-  let charset = '';
-  if (useUpper) charset += 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  if (useLower) charset += 'abcdefghijkmnpqrstuvwxyz';
-  if (useNumbers) charset += '23456789';
-  if (useSymbols) charset += '!@#$%^&*()_+~|}{[]:;?><=';
-
-  if (!charset) charset = 'abcdefghijklmnopqrstuvwxyz23456789';
-
-  const randomValues = getRandomBytes(length);
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += charset[randomValues[i] % charset.length];
-  }
-  return result;
+export function generatePassword({ length = 18, useUpper = true, useLower = true, useNumbers = true, useSymbols = true } = {}) {
+  const groups = [useUpper && 'ABCDEFGHJKLMNPQRSTUVWXYZ', useLower && 'abcdefghijkmnpqrstuvwxyz', useNumbers && '23456789', useSymbols && '!@#$%^&*()_+~|}{[]:;?><='].filter(Boolean);
+  if (!groups.length) throw new Error('เลือกอักขระอย่างน้อยหนึ่งชนิด');
+  if (!Number.isInteger(length) || length < groups.length || length > 128) throw new Error('ความยาวไม่ถูกต้อง');
+  const pick = n => { const limit = 256 - (256 % n); let value; do { value = getRandomBytes(1)[0]; } while (value >= limit); return value % n; };
+  const charset = groups.join('');
+  const result = groups.map(group => group[pick(group.length)]);
+  while (result.length < length) result.push(charset[pick(charset.length)]);
+  for (let i=result.length-1; i>0; i--) { const j=pick(i+1); [result[i],result[j]]=[result[j],result[i]]; }
+  return result.join('');
 }

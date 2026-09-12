@@ -1,30 +1,9 @@
-/**
- * Storage management service for My Key
- * Encrypted data is stored in localStorage / IndexedDB.
- */
-
-const STORAGE_KEYS = {
-  VAULT_META: 'mykey_vault_meta_v1',
-  VAULT_DATA: 'mykey_vault_data_v1',
-  SETTINGS: 'mykey_settings_v1'
-};
-
-const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAzFA9fBhM9nHYNVpVgCv7-n38JVUFy5FI",
-  authDomain: "my-key-9d8f2.firebaseapp.com",
-  projectId: "my-key-9d8f2",
-  storageBucket: "my-key-9d8f2.firebasestorage.app",
-  messagingSenderId: "166384650690",
-  appId: "1:166384650690:web:5a30d5b8901386bb84ae5b",
-  measurementId: "G-L0M5ZTSKW4"
-};
-
 const DEFAULT_SETTINGS = {
   theme: 'emerald', // 'emerald' | 'violet' | 'blue' | 'gold' | 'rose'
   autoLockMinutes: 5,
   clearClipboardSeconds: 30,
   biometricsEnabled: false,
-  firebaseConfig: DEFAULT_FIREBASE_CONFIG,
+  firebaseConfig: null,
   categories: [
     { id: 'games', name: 'เกม (Games)', icon: 'Gamepad2', color: 'text-purple-400' },
     { id: 'social', name: 'โซเชียลมีเดีย (Social)', icon: 'Globe', color: 'text-blue-400' },
@@ -35,69 +14,32 @@ const DEFAULT_SETTINGS = {
   ]
 };
 
+
+const KEY = 'mykey_envelope_v2';
+const SETTINGS = 'mykey_settings_v1';
+const read = key => { const raw = localStorage.getItem(key); return raw === null ? null : JSON.parse(raw); };
 export const storageService = {
-  getVaultMeta() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.VAULT_META);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      console.error('Failed to get vault meta', e);
-      return null;
-    }
+  getEnvelope() {
+    const stored = read(KEY);
+    if (stored) return stored;
+    const meta = read('mykey_vault_meta_v1'), vault = read('mykey_vault_data_v1');
+    if (!meta && !vault) return null;
+    if (!meta || !vault) throw new Error('ข้อมูลเดิมไม่ครบ กรุณากู้คืนจากไฟล์สำรอง');
+    return { app: 'My Key', version: '1.0', meta, vault };
   },
-
-  setVaultMeta(meta) {
-    try {
-      localStorage.setItem(STORAGE_KEYS.VAULT_META, JSON.stringify(meta));
-    } catch (e) {
-      console.error('Failed to save vault meta', e);
-    }
+  saveEnvelope(envelope, preserve = false) {
+    const old = this.getEnvelope();
+    if (preserve && old) localStorage.setItem('mykey_rollback_v2', JSON.stringify(old));
+    // One atomic localStorage write prevents metadata/payload tearing.
+    localStorage.setItem(KEY, JSON.stringify(envelope));
+    localStorage.removeItem('mykey_vault_meta_v1');
+    localStorage.removeItem('mykey_vault_data_v1');
   },
-
-  getEncryptedVaultData() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.VAULT_DATA);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      console.error('Failed to get encrypted vault data', e);
-      return null;
-    }
-  },
-
-  setEncryptedVaultData(encryptedData) {
-    try {
-      localStorage.setItem(STORAGE_KEYS.VAULT_DATA, JSON.stringify(encryptedData));
-    } catch (e) {
-      console.error('Failed to save encrypted vault data', e);
-    }
-  },
-
-  getSettings() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      if (!raw) return DEFAULT_SETTINGS;
-      const parsed = JSON.parse(raw);
-      return {
-        ...DEFAULT_SETTINGS,
-        ...parsed,
-        firebaseConfig: parsed.firebaseConfig || DEFAULT_FIREBASE_CONFIG
-      };
-    } catch (e) {
-      console.error('Failed to get settings', e);
-      return DEFAULT_SETTINGS;
-    }
-  },
-
-  setSettings(settings) {
-    try {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-    } catch (e) {
-      console.error('Failed to save settings', e);
-    }
-  },
-
-  clearAll() {
-    localStorage.removeItem(STORAGE_KEYS.VAULT_META);
-    localStorage.removeItem(STORAGE_KEYS.VAULT_DATA);
-  }
+  getRollback() { return read('mykey_rollback_v2'); },
+  getVaultMeta() { return this.getEnvelope()?.meta || null; },
+  getEncryptedVaultData() { return this.getEnvelope()?.vault || null; },
+  getSettings() { const parsed = read(SETTINGS); return { ...structuredClone(DEFAULT_SETTINGS), ...parsed }; },
+  setSettings(settings) { localStorage.setItem(SETTINGS, JSON.stringify(settings)); },
+  getBackupStatus() { return read('mykey_backup_status_v2') || {}; },
+  setBackupStatus(status) { localStorage.setItem('mykey_backup_status_v2', JSON.stringify(status)); },
 };
