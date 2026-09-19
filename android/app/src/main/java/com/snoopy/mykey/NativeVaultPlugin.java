@@ -66,8 +66,6 @@ public class NativeVaultPlugin extends Plugin {
     @PluginMethod public void disable(PluginCall call){try{SecureVault.disable(getContext());call.resolve();}catch(Exception e){call.reject("ยกเลิกกุญแจไม่สำเร็จ");}}
     @Override protected void handleOnPause(){
         notifyListeners("background",new JSObject(),true);
-        // Clear WebView synchronously before returning from onPause; the JS listener is a second layer.
-        getActivity().runOnUiThread(()->{ if(getBridge().getWebView()!=null)getBridge().getWebView().evaluateJavascript("window.dispatchEvent(new Event('pagehide'));",null); });
         if(prompt!=null)prompt.cancel();
     }
     @PluginMethod public void listApps(PluginCall call){

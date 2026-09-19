@@ -5,6 +5,15 @@ if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: web
 globalThis.structuredClone ||= value => JSON.parse(JSON.stringify(value));
 
 const model = await import('../src/services/vaultModel.js');
+const lockPolicy = await import('../src/services/lockPolicy.js');
+
+test('allows a short background grace period before locking', () => {
+  const hiddenAt = 1_000;
+  assert.equal(lockPolicy.shouldLockAfterBackground(hiddenAt, 30_999, 30), false);
+  assert.equal(lockPolicy.shouldLockAfterBackground(hiddenAt, 31_000, 30), true);
+  assert.equal(lockPolicy.shouldLockAfterBackground(hiddenAt, 1_000, 0), true);
+  assert.equal(lockPolicy.normalizeBackgroundLockSeconds(999), 30);
+});
 
 test('creates, opens, and strips quick PIN material from portable backups', async () => {
   const created = await model.createEnvelope('Correct-Horse-2026', [{ id: 'work', name: 'Work' }]);

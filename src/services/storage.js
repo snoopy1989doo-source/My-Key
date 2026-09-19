@@ -1,6 +1,7 @@
 const DEFAULT_SETTINGS = {
   theme: 'emerald', // 'emerald' | 'violet' | 'blue' | 'gold' | 'rose'
   autoLockMinutes: 5,
+  backgroundLockSeconds: 30,
   clearClipboardSeconds: 30,
   biometricsEnabled: false,
   firebaseConfig: null,

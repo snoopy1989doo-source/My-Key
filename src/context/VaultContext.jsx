@@ -5,6 +5,7 @@ import { portableEnvelope, parseBackup, openEnvelope, exportRawKey, importRawKey
 import { generateEmergencyKey } from '../services/crypto.js';
 import { firebaseService } from '../services/firebase.js';
 import { isAndroid, NativeVault, nativeStatus, mirrorEnvelope, downloadFile } from '../services/native.js';
+import { normalizeBackgroundLockSeconds, shouldLockAfterBackground } from '../services/lockPolicy.js';
 const VaultContext = createContext(null);
 export function VaultProvider({ children }) {
   const [store] = useState(() => new VaultStore(storageService));
@@ -21,22 +22,36 @@ export function VaultProvider({ children }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isStealthMode, setIsStealthMode] = useState(false);
-  const pendingImport = useRef(null), clipboardTimer = useRef(null), lastActivity = useRef(Date.now()), syncQueue = useRef(Promise.resolve());
+  const pendingImport = useRef(null), clipboardTimer = useRef(null), backgroundTimer = useRef(null), hiddenAt = useRef(0), lockedRef = useRef(true), lastActivity = useRef(Date.now()), syncQueue = useRef(Promise.resolve());
   const mounted = useRef(true);
   const refreshNative = useCallback(async () => { try { const state = await nativeStatus(); if (mounted.current) setBiometrics(state); } catch { setBiometrics({ available: false, enrolled: false }); } }, []);
   const lockVault = useCallback(() => {
-    store.lock(); pendingImport.current = null; setPayload(null); setIsLocked(true); setSearchQuery(''); setActiveCategory('all'); setIsStealthMode(false);
+    lockedRef.current = true; clearTimeout(backgroundTimer.current); backgroundTimer.current = null; hiddenAt.current = 0; store.lock(); pendingImport.current = null; setPayload(null); setIsLocked(true); setSearchQuery(''); setActiveCategory('all'); setIsStealthMode(false);
   }, [store]);
+  useEffect(() => () => store.lock(), [store]);
   useEffect(() => {
     mounted.current = true;
-    const hide = () => { if (document.visibilityState === 'hidden') lockVault(); };
+    const cancelBackgroundLock = () => { clearTimeout(backgroundTimer.current); backgroundTimer.current = null; };
+    const scheduleBackgroundLock = () => {
+      if (lockedRef.current || hiddenAt.current) return;
+      hiddenAt.current = Date.now();
+      const seconds = normalizeBackgroundLockSeconds(settings.backgroundLockSeconds);
+      if (seconds === 0) lockVault();
+      else backgroundTimer.current = setTimeout(lockVault, seconds * 1000);
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') { scheduleBackgroundLock(); return; }
+      const mustLock = shouldLockAfterBackground(hiddenAt.current, Date.now(), settings.backgroundLockSeconds);
+      cancelBackgroundLock(); hiddenAt.current = 0;
+      if (mustLock) lockVault();
+    };
     const external = event => { if (event.key === 'mykey_envelope_v2') lockVault(); };
-    document.addEventListener('visibilitychange', hide); window.addEventListener('pagehide', lockVault); window.addEventListener('storage', external);
+    document.addEventListener('visibilitychange', visibility); window.addEventListener('pagehide', scheduleBackgroundLock); window.addEventListener('storage', external);
     let stopped = false, listener;
-    if (isAndroid) NativeVault.addListener('background', lockVault).then(handle => { if (stopped) handle.remove(); else listener = handle; });
+    if (isAndroid) NativeVault.addListener('background', scheduleBackgroundLock).then(handle => { if (stopped) handle.remove(); else listener = handle; });
     refreshNative();
-    return () => { mounted.current = false; stopped = true; listener?.remove(); document.removeEventListener('visibilitychange', hide); window.removeEventListener('pagehide', lockVault); window.removeEventListener('storage', external); store.lock(); };
-  }, [store, lockVault, refreshNative]);
+    return () => { mounted.current = false; stopped = true; cancelBackgroundLock(); hiddenAt.current = 0; listener?.remove(); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', scheduleBackgroundLock); window.removeEventListener('storage', external); };
+  }, [settings.backgroundLockSeconds, lockVault, refreshNative]);
   useEffect(() => { firebaseService.init(settings.firebaseConfig).catch(e => setError(e.message)); }, [settings.firebaseConfig]);
   useEffect(() => { document.documentElement.dataset.theme = settings.theme || 'emerald'; }, [settings.theme]);
   useEffect(() => {
@@ -47,7 +62,7 @@ export function VaultProvider({ children }) {
     const timer = setInterval(() => { if (Date.now() - lastActivity.current >= Math.max(1, settings.autoLockMinutes || 5) * 60000) lockVault(); }, 1000);
     return () => { clearInterval(timer); events.forEach(e => window.removeEventListener(e, active)); };
   }, [isLocked, settings.autoLockMinutes, lockVault]);
-  const show = () => { setPayload(structuredClone(store.payload)); setIsLocked(false); setIsSetup(true); setError(''); };
+  const show = () => { lockedRef.current = false; setPayload(structuredClone(store.payload)); setIsLocked(false); setIsSetup(true); setError(''); };
   const updateSettings = async next => {
     if (next.categories) { await store.mutate('categories', next.categories); setPayload(structuredClone(store.payload)); }
     const merged = { ...settings, ...next }; storageService.setSettings(merged); setSettings(merged);
@@ -66,7 +81,7 @@ export function VaultProvider({ children }) {
   async function afterSave() {
     if (store.payload) setPayload(structuredClone(store.payload));
     try { await mirrorEnvelope(portableEnvelope(storageService.getEnvelope())); } catch { setError('บันทึกในแอปแล้ว แต่สำเนา Autofill ยังอัปเดตไม่ได้ กรุณาเปิดแอปใหม่ก่อนใช้ Autofill'); }
-    if (settings.firebaseConfig && (await firebaseService.account())?.email) triggerCloudSync().catch(() => {});
+    if (settings.firebaseConfig && await firebaseService.account()) triggerCloudSync().catch(() => {});
   }
   const unlock = async (password, mode) => {
     const attempts = JSON.parse(sessionStorage.getItem('mykey_attempts') || '{"count":0,"until":0}');

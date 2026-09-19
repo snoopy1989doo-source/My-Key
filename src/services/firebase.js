@@ -1,17 +1,25 @@
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, linkWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { portableEnvelope, validateEnvelope } from './vaultModel.js';
-let app, auth, db;
+let app, auth, db, configuredProjectId;
 let pending = Promise.resolve();
 const revisionKey = uid => `mykey_cloud_revision_${uid}`;
+async function assertRulesProtected() {
+  if (!configuredProjectId) throw new Error('Firebase config ไม่มี projectId');
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(configuredProjectId)}/databases/(default)/documents/mykey_vaults?pageSize=1&mask.fieldPaths=app`;
+  const response = await fetch(url, { cache: 'no-store' });
+  if (response.ok) throw new Error('กฎ Firestore ยังเปิดให้อ่านโดยไม่ล็อกอิน กรุณา deploy firestore.rules ก่อนใช้ Cloud');
+  if (![401, 403].includes(response.status)) throw new Error(`ตรวจสอบกฎ Firestore ไม่สำเร็จ (HTTP ${response.status})`);
+}
 export const firebaseService = {
   init(config) {
     pending = pending.catch(() => {}).then(async () => {
       if (app) await deleteApp(app);
-      app = auth = db = null;
+      app = auth = db = configuredProjectId = null;
       if (!config) return;
       if (!config.apiKey || !config.projectId) throw new Error('Firebase config ไม่ครบ');
+      configuredProjectId = config.projectId;
       app = initializeApp(config, 'my-key-v2'); auth = getAuth(app); db = getFirestore(app);
       await auth.authStateReady();
     });
@@ -29,11 +37,21 @@ export const firebaseService = {
   async logout() { await pending; if (auth) await signOut(auth); },
   async user() {
     await pending;
-    if (!auth?.currentUser || auth.currentUser.isAnonymous) throw new Error('เข้าสู่ระบบบัญชี Cloud ก่อน จึงจะย้ายเครื่องได้');
+    if (!auth?.currentUser) throw new Error('เข้าสู่ระบบบัญชี Cloud ก่อน');
     return auth.currentUser;
+  },
+  async checkConnection() {
+    const user = await this.user();
+    await assertRulesProtected();
+    const snap = await getDocFromServer(doc(db, 'mykey_vaults', user.uid));
+    if (!snap.exists()) return { email: user.email, anonymous: user.isAnonymous, hasBackup: false, updatedAt: null };
+    const data = snap.data();
+    validateEnvelope({ app: data.app || 'My Key', version: data.version || '1.0', meta: data.meta, vault: data.vault });
+    return { email: user.email, anonymous: user.isAnonymous, hasBackup: true, updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() || null };
   },
   async uploadVault(envelope) {
     const user = await this.user();
+    await assertRulesProtected();
     const data = portableEnvelope(validateEnvelope(envelope));
     const expected = JSON.parse(localStorage.getItem(revisionKey(user.uid)) || 'null');
     const nextRevision = crypto.randomUUID();
@@ -41,7 +59,8 @@ export const firebaseService = {
       const ref = doc(db, 'mykey_vaults', user.uid), snap = await tx.get(ref);
       if (snap.exists()) {
         const remote = snap.data();
-        if (!expected || expected !== remote.cloudRevision || remote.meta?.vaultId !== data.meta.vaultId) throw new Error('Cloud มีข้อมูลอื่นหรือใหม่กว่า กรุณาดาวน์โหลดตรวจสอบและกู้คืน/รวมก่อนซิงก์');
+        const acceptedLegacy = expected === 'legacy-accepted' && !remote.cloudRevision;
+        if (!acceptedLegacy && (!expected || expected !== remote.cloudRevision || remote.meta?.vaultId !== data.meta.vaultId)) throw new Error('Cloud มีข้อมูลอื่นหรือใหม่กว่า กรุณาดาวน์โหลดตรวจสอบและกู้คืนก่อนซิงก์');
       }
       tx.set(ref, { ...data, cloudRevision: nextRevision, updatedAt: serverTimestamp() });
     });
@@ -49,7 +68,9 @@ export const firebaseService = {
     return { success: true, timestamp: new Date().toISOString() };
   },
   async downloadVault() {
-    const user = await this.user(), snap = await getDoc(doc(db, 'mykey_vaults', user.uid));
+    const user = await this.user();
+    await assertRulesProtected();
+    const snap = await getDocFromServer(doc(db, 'mykey_vaults', user.uid));
     if (!snap.exists()) throw new Error('ไม่พบข้อมูลบน Cloud');
     const data = snap.data();
     const envelope = validateEnvelope({ app: data.app || 'My Key', version: data.version || '1.0', meta: data.meta, vault: data.vault });
@@ -58,6 +79,6 @@ export const firebaseService = {
   async acceptDownload(download) {
     const user = await this.user();
     if (user.uid !== download.uid) throw new Error('บัญชี Cloud เปลี่ยน กรุณาดาวน์โหลดใหม่');
-    if (download.cloudRevision) localStorage.setItem(revisionKey(user.uid), JSON.stringify(download.cloudRevision));
+    localStorage.setItem(revisionKey(user.uid), JSON.stringify(download.cloudRevision || 'legacy-accepted'));
   }
 };
