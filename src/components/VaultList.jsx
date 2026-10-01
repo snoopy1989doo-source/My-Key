@@ -128,6 +128,7 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
 
   // Filter items
   const filteredItems = vaultItems.filter((item) => {
+    if (item.type === 'bank') return false;
     // Category filter
     if (activeCategory === 'favorites' && !item.favorite) return false;
     if (activeCategory !== 'all' && activeCategory !== 'favorites' && item.category !== activeCategory) {
@@ -155,11 +156,11 @@ export default function VaultList({ onSelectItem, onAddNew, onOpenCategoryManage
   });
 
   const categories = [
-    { id: 'all', name: 'ทั้งหมด', count: vaultItems.length },
-    { id: 'favorites', name: 'รายการโปรด', count: vaultItems.filter(i => i.favorite).length, isFav: true },
+    { id: 'all', name: 'ทั้งหมด', count: vaultItems.filter(i => i.type !== 'bank').length },
+    { id: 'favorites', name: 'รายการโปรด', count: vaultItems.filter(i => i.type !== 'bank' && i.favorite).length, isFav: true },
     ...settings.categories.map(c => ({
       ...c,
-      count: vaultItems.filter(i => i.category === c.id).length
+      count: vaultItems.filter(i => i.type !== 'bank' && i.category === c.id).length
     }))
   ];
 

@@ -4,6 +4,7 @@ import { useVault } from '../context/VaultContext';
 
 export default function PrintVaultModal({ isOpen, onClose }) {
   const { vaultItems, settings } = useVault();
+  const passwordItems = vaultItems.filter(item => item.type !== 'bank');
 
   const [maskPasswords, setMaskPasswords] = useState(true);
   const [includePins, setIncludePins] = useState(true);
@@ -14,17 +15,6 @@ export default function PrintVaultModal({ isOpen, onClose }) {
   const handlePrint = () => {
     window.print();
   };
-
-  // Group items by category
-  const categoriesWithItems = settings.categories.map(cat => ({
-    ...cat,
-    items: vaultItems.filter(item => item.category === cat.id)
-  })).filter(cat => cat.items.length > 0);
-
-  // Items without specific category or in 'others'
-  const otherItems = vaultItems.filter(item =>
-    !item.category || item.category === 'others' || !settings.categories.some(c => c.id === item.category)
-  );
 
   return (
     <div className="print-vault fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
@@ -108,13 +98,13 @@ export default function PrintVaultModal({ isOpen, onClose }) {
             <div className="text-right text-[10px] text-slate-500">
               <p>วันที่พิมพ์: {new Date().toLocaleDateString('th-TH')}</p>
               <p>เวลา: {new Date().toLocaleTimeString('th-TH')}</p>
-              <p>จำนวน: {vaultItems.length} รายการ</p>
+              <p>จำนวน: {passwordItems.length} รายการ</p>
             </div>
           </div>
 
           {/* Table */}
           <div className="space-y-4">
-            {vaultItems.length === 0 ? (
+            {passwordItems.length === 0 ? (
               <p className="text-center py-8 text-slate-400 italic">ยังไม่มีข้อมูลในตู้เซฟ</p>
             ) : (
               <table className="w-full border-collapse text-left text-xs">
@@ -130,7 +120,7 @@ export default function PrintVaultModal({ isOpen, onClose }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {vaultItems.map((item, idx) => {
+                  {passwordItems.map((item, idx) => {
                     const catName = settings.categories.find(c => c.id === item.category)?.name || item.category || 'ทั่วไป';
                     const displayPassword = maskPasswords && item.password
                       ? (item.password.length > 3 ? `${item.password[0]}***${item.password.slice(-1)}` : '***')

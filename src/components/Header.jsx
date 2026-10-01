@@ -1,11 +1,22 @@
-import React,{useState} from 'react';
-import {Lock,Plus,Search,Menu} from 'lucide-react';
-import {useVault} from '../context/VaultContext';
-export default function Header({onOpenGenerator,onOpenSettings,onAddNew,onOpenPrint,onOpenTools}){
- const v=useVault(),[menu,setMenu]=useState(false);
- return <header className="sticky top-0 z-30 bg-surface-950 border-b border-slate-800 safe-top no-print"><div className="max-w-4xl mx-auto p-4"><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2 min-w-0"><img src="./logo.png" alt="My Key" className="w-9 h-9 rounded-xl shrink-0"/><span className="font-bold truncate">My Key</span></div><div className="flex shrink-0 gap-2"><button title="เครื่องมือและการตั้งค่า" aria-expanded={menu} onClick={()=>setMenu(!menu)} className="p-3 rounded-xl bg-surface-800"><Menu size={20}/></button><button title="ล็อกตู้เซฟทันที" onClick={v.lockVault} className="flex items-center gap-1 p-3 rounded-xl bg-red-950 text-red-300"><Lock size={18}/><span className="text-sm">ล็อก</span></button></div></div>
- {menu&&<nav aria-label="เครื่องมือตู้เซฟ" className="grid grid-cols-2 gap-2 py-3 text-sm">{[['สุขภาพรหัส / ถังขยะ',onOpenTools],['สำรอง / ทดลองกู้คืน',()=>onOpenSettings('backup')],['สแกนนิ้ว / Autofill',()=>onOpenSettings('security')],['บัญชี Cloud',()=>onOpenSettings('cloud')],['สุ่มรหัสผ่าน',onOpenGenerator],['พิมพ์สมุดรหัสผ่าน',onOpenPrint],['ธีมสี',()=>onOpenSettings('theme')],['พรางหน้าจอ',v.toggleStealthMode]].map(([name,fn])=><button key={name} className="p-3 rounded-xl bg-surface-800 text-left" onClick={()=>{setMenu(false);fn();}}>{name}</button>)}</nav>}
- <div className="flex gap-2 mt-3"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-3 w-4 h-4 text-slate-500"/><input aria-label="ค้นหารหัสผ่าน" placeholder="ค้นหาบัญชีหรือโน้ต…" className="w-full min-w-0 rounded-xl bg-surface-900 py-3 pl-9 pr-2 text-sm" value={v.searchQuery} onChange={e=>v.setSearchQuery(e.target.value)}/></div><button onClick={onAddNew} className="shrink-0 flex gap-1 items-center rounded-xl px-3 bg-emerald-500 text-surface-950 font-bold text-sm"><Plus size={17}/>เพิ่ม</button></div>
- <p className="text-xs text-slate-400 mt-2">{v.syncStatus==='syncing'?'กำลังซิงก์…':v.syncStatus==='error'?'ซิงก์ไม่สำเร็จ — เปิด Cloud เพื่อตรวจสอบ':v.syncStatus==='synced'?'ซิงก์ Cloud สำเร็จ':'เก็บข้อมูลในเครื่อง'} · {v.backupStatus.exportedAt?'มีไฟล์สำรองที่เคยส่งออก':'ยังไม่ได้ส่งออกสำรอง'}</p>
- </div></header>;
+import React, { useState } from 'react';
+import { Lock, Search, Menu, ShieldCheck } from 'lucide-react';
+import { useVault } from '../context/VaultContext';
+
+export default function Header({ onOpenGenerator, onOpenSettings, onOpenPrint, onOpenTools, tab }) {
+  const vault = useVault();
+  const [menu, setMenu] = useState(false);
+  const actions = [
+    ['สุขภาพรหัส / ถังขยะ', onOpenTools],
+    ['สำรอง / ทดลองกู้คืน', () => onOpenSettings('backup')],
+    ['สแกนนิ้ว / Autofill', () => onOpenSettings('security')],
+    ['บัญชี Cloud', () => onOpenSettings('cloud')],
+    ['สุ่มรหัสผ่าน', onOpenGenerator],
+    ['พิมพ์สมุดรหัสผ่าน', onOpenPrint],
+    ['ธีมสี', () => onOpenSettings('theme')],
+    ['พรางหน้าจอ', vault.toggleStealthMode]
+  ];
+  return <header className="mykey-header safe-top no-print"><div className="max-w-4xl mx-auto px-4 py-3"><div className="flex items-center gap-3"><img src="./logo.png" alt="" className="w-10 h-10 rounded-xl"/><div className="flex-1 min-w-0"><strong className="block text-lg leading-tight">My Key</strong><span className="text-[10px] tracking-[.13em] text-emerald-400 uppercase flex items-center gap-1"><ShieldCheck size={11}/> PRIVATE VAULT</span></div><button title="เครื่องมือและการตั้งค่า" aria-expanded={menu} onClick={() => setMenu(!menu)} className="mykey-header-action"><Menu size={20}/></button><button title="ล็อกตู้เซฟทันที" onClick={vault.lockVault} className="mykey-header-action"><Lock size={19}/></button></div>
+  {menu && <nav aria-label="เครื่องมือตู้เซฟ" className="mykey-tools-menu">{actions.map(([name, fn]) => <button key={name} onClick={() => { setMenu(false); fn(); }}>{name}</button>)}</nav>}
+  {tab === 'passwords' && <div className="mykey-search mt-4"><Search size={18}/><input aria-label="ค้นหารหัสผ่าน" placeholder="ค้นหารหัสผ่าน บัญชี หรือโน้ต" value={vault.searchQuery} onChange={e => vault.setSearchQuery(e.target.value)}/></div>}
+  </div></header>;
 }

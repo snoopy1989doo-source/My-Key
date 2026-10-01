@@ -8,9 +8,11 @@ export const emptyPayload = (categories = []) => ({ items: [], trash: [], catego
 
 function validateItem(item) {
   if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id || typeof item.title !== 'string') throw new Error('รายการในไฟล์ไม่ถูกต้อง');
-  for (const field of ['password', 'username', 'pin', 'notes', 'url', 'category', 'androidPackage', 'androidCertSha256']) {
+  if (item.type !== undefined && !['password', 'bank'].includes(item.type)) throw new Error('ชนิดรายการไม่ถูกต้อง');
+  for (const field of ['password', 'username', 'pin', 'notes', 'url', 'category', 'androidPackage', 'androidCertSha256', 'bankId', 'bankName', 'accountNumber', 'accountName', 'accountType', 'branch', 'promptPay', 'passbookPattern']) {
     if (item[field] !== undefined && typeof item[field] !== 'string') throw new Error('ข้อมูลรายการไม่ถูกต้อง');
   }
+  if (item.type === 'bank' && (!item.accountNumber?.trim() || !item.accountName?.trim() || !item.bankName?.trim())) throw new Error('ข้อมูลบัญชีธนาคารไม่ครบ');
 }
 export function normalizePayload(data, fallbackCategories = []) {
   const payload = Array.isArray(data) ? { ...emptyPayload(fallbackCategories), items: data } : data;
@@ -121,6 +123,7 @@ export function mergePayload(current, incoming) {
   return result;
 }
 export function passwordHealth(items) {
+  items = items.filter(item => item.type !== 'bank');
   const counts = new Map();
   for (const item of items) if (item.password) counts.set(item.password, (counts.get(item.password) || 0) + 1);
   return items.map(item => {

@@ -53,3 +53,21 @@ test('finds duplicate and weak passwords locally', () => {
   assert.equal(findings.length, 2);
   assert.ok(findings.every(item => item.reasons.includes('ใช้รหัสซ้ำ')));
 });
+
+test('bank account lives in encrypted payload, history and trash without password health noise', async () => {
+  let payload = model.emptyPayload([]);
+  payload = model.revisePayload(payload, 'save', { type: 'bank', title: 'บัญชีสำรอง', bankName: 'ธนาคารทดสอบ', accountNumber: '012-345-6789', accountName: 'ผู้ทดสอบ', accountType: 'savings' });
+  const id = payload.items[0].id;
+  assert.equal(model.passwordHealth(payload.items).length, 0);
+  payload = model.revisePayload(payload, 'save', { ...payload.items[0], branch: 'สาขากลาง' });
+  assert.equal(payload.history[id][0].item.accountNumber, '012-345-6789');
+  payload = model.revisePayload(payload, 'delete', id);
+  assert.equal(payload.trash[0].type, 'bank');
+  payload = model.revisePayload(payload, 'restore', id);
+  assert.equal(payload.items[0].branch, 'สาขากลาง');
+  const created = await model.createEnvelope('Correct-Horse-2026', []);
+  const cryptoModule = await import('../src/services/crypto.js');
+  created.envelope.vault = await cryptoModule.encryptData(payload, created.key);
+  const opened = await model.openEnvelope(created.envelope, 'Correct-Horse-2026');
+  assert.equal(opened.payload.items[0].accountNumber, '012-345-6789');
+});
