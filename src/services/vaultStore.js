@@ -57,6 +57,13 @@ export class VaultStore {
       return this.commit(this.payload, meta, token);
     });
   }
+  setQuickPin(pin) {
+    if (!/^\d{6}$/.test(pin)) throw new Error('PIN ต้องเป็นตัวเลข 6 หลัก');
+    return this.enqueue(async token => {
+      const wrap = await wrapKey(await exportRawKey(this.key), pin);
+      return this.commit(this.payload, { ...this.envelope.meta, pinSalt: wrap.salt, wrappedByPin: wrap.wrapped, pinIterations: KDF_ROUNDS }, token);
+    });
+  }
   removeLegacyPin() { return this.enqueue(token => this.commit(this.payload, portableEnvelope(this.envelope).meta, token)); }
   rotateRecovery(secret) { return this.enqueue(async token => {
     const wrap = await wrapKey(await exportRawKey(this.key), secret);

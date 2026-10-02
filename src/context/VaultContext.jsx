@@ -108,7 +108,7 @@ export function VaultProvider({ children }) {
     await mirrorEnvelope(portableEnvelope(storageService.getEnvelope()));
     await NativeVault.enroll({ rawKey: await exportRawKey(verified.key), vaultId: store.envelope.meta.vaultId || store.envelope.meta.createdAt });
     if (session !== store.session) { await NativeVault.disable(); throw new Error('แอปถูกพัก กรุณาเปิดสแกนนิ้วใหม่'); }
-    await store.removeLegacyPin(); await afterSave(); await refreshNative();
+    await afterSave(); await refreshNative();
   };
   const unlockBiometrics = async () => {
     const session = store.session;
@@ -164,6 +164,7 @@ export function VaultProvider({ children }) {
     setupNewVault, completeSetup, lockVault, unlockWithPin: p => unlock(p, 'pin'), unlockWithMasterPassword: p => unlock(p, 'master'), unlockWithEmergencyKey: p => unlock(p, 'recovery'),
     saveVaultItem: data => mutate('save', data), deleteVaultItem: id => mutate('delete', id), restoreItem: id => mutate('restore', id), restoreHistory: (id, index) => mutate('history', { id, index }), toggleFavorite: id => mutate('favorite', id),
     changeMasterPassword: async (password, old) => { await verifyMaster(old); await store.changeMaster(password); await afterSave(); },
+    setQuickPin: async (pin, master) => { await verifyMaster(master); await store.setQuickPin(pin); await afterSave(); },
     removeLegacyPin: async master => { await verifyMaster(master); await store.removeLegacyPin(); await afterSave(); }, rotateRecovery,
     hasLegacyPin: !!storageService.getVaultMeta()?.wrappedByPin,
     updateSettings, setTheme: theme => updateSettings({ theme }), copyToClipboard, triggerCloudSync, exportEncryptedBackup, checkBackup, commitImport,

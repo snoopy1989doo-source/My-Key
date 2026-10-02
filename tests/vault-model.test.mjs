@@ -19,9 +19,15 @@ test('creates, opens, and strips quick PIN material from portable backups', asyn
   const created = await model.createEnvelope('Correct-Horse-2026', [{ id: 'work', name: 'Work' }]);
   const opened = await model.openEnvelope(created.envelope, 'Correct-Horse-2026', 'master');
   assert.equal(opened.payload.items.length, 0);
-  const portable = model.portableEnvelope({ ...created.envelope, meta: { ...created.envelope.meta, pinSalt: 'x', wrappedByPin: {} } });
+  const raw = await model.exportRawKey(created.key);
+  const pinWrap = await model.wrapKey(raw, '135790');
+  const localEnvelope = { ...created.envelope, meta: { ...created.envelope.meta, pinSalt: pinWrap.salt, wrappedByPin: pinWrap.wrapped, pinIterations: pinWrap.iterations } };
+  const pinOpened = await model.openEnvelope(localEnvelope, '135790', 'pin');
+  assert.equal(pinOpened.payload.items.length, 0);
+  const portable = model.portableEnvelope(localEnvelope);
   assert.equal('pinSalt' in portable.meta, false);
   assert.equal('wrappedByPin' in portable.meta, false);
+  assert.equal('pinIterations' in portable.meta, false);
 });
 
 test('rejects malformed backups before import', () => {

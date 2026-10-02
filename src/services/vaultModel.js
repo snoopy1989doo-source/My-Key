@@ -63,7 +63,7 @@ export async function openEnvelope(envelope, password, mode = 'master', categori
   if (!['master', 'recovery', 'pin'].includes(mode)) throw new Error('วิธีปลดล็อกไม่ถูกต้อง');
   const m = envelope.meta;
   const field = mode[0].toUpperCase() + mode.slice(1);
-  if (!m[`wrappedBy${field}`]) throw new Error('เครื่องนี้ไม่มี PIN เดิม กรุณาใช้ Master Password');
+  if (!m[`wrappedBy${field}`]) throw new Error(mode === 'pin' ? 'เครื่องนี้ยังไม่ได้ตั้ง PIN สำรอง กรุณาใช้ Master Password' : 'ไม่พบกุญแจสำหรับวิธีนี้');
   const secret = mode === 'recovery' ? password.trim().toUpperCase() : password;
   const derived = await deriveKey(secret, m[`${mode}Salt`], m[`${mode}Iterations`] || 120000);
   const wrapped = m[`wrappedBy${field}`];

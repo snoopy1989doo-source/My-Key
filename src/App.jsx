@@ -3,7 +3,7 @@ import { VaultProvider, useVault } from './context/VaultContext';
 import SetupScreen from './components/SetupScreen';
 import UnlockScreen from './components/UnlockScreen';
 import Header from './components/Header';
-import VaultList from './components/VaultList';
+import PasswordVault from './components/PasswordVault';
 import VaultItemModal from './components/VaultItemModal';
 import PasswordGeneratorModal from './components/PasswordGeneratorModal';
 import SettingsModal from './components/SettingsModal';
@@ -16,7 +16,7 @@ import HomeDashboard from './components/HomeDashboard';
 import { Plus, House, KeyRound, Building2 } from 'lucide-react';
 
 function UnlockedApp() {
-  const { error, setError, setSearchQuery } = useVault();
+  const { error, setError, setSearchQuery, activeCategory, setActiveCategory } = useVault();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [tab, setTab] = useState('home');
   const [selectedBank, setSelectedBank] = useState(null);
@@ -31,12 +31,12 @@ function UnlockedApp() {
   const [settingsTab, setSettingsTab] = useState('cloud');
 
   const handleAddNew = () => {
-    setSelectedItem(null);
+    setSelectedItem(tab === 'passwords' && !['all', 'favorites'].includes(activeCategory) ? { category: activeCategory } : null);
     setIsItemModalOpen(true);
   };
   const handleAddBank = () => { setSelectedBank(null); setIsBankModalOpen(true); };
   const handleSelectBank = item => { setSelectedBank(item); setIsBankModalOpen(true); };
-  const navigate = next => { setSearchQuery(''); setTab(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const navigate = next => { setSearchQuery(''); if (next === 'passwords') setActiveCategory('all'); setTab(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   const handleSelectItem = (item) => {
     setSelectedItem(item);
@@ -65,7 +65,7 @@ function UnlockedApp() {
       {/* Main Content: Vault Items & Categories */}
       <div className="flex-1">
         {tab === 'home' && <HomeDashboard onNavigate={navigate} onAddPassword={handleAddNew} onAddBank={handleAddBank} onSelectPassword={handleSelectItem} onSelectBank={handleSelectBank} />}
-        {tab === 'passwords' && <VaultList
+        {tab === 'passwords' && <PasswordVault
           onSelectItem={handleSelectItem}
           onAddNew={handleAddNew}
           onOpenCategoryManager={() => setIsCategoryManagerOpen(true)}
